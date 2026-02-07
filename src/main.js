@@ -262,6 +262,70 @@ scene.add(heroTwo)
 
 controls.target.copy(hero.position)
 
+const createKissHeartMesh = () => {
+  const heart = new THREE.Shape()
+  heart.moveTo(0, 0.25)
+  heart.bezierCurveTo(0, 0, -0.5, 0, -0.5, 0.3)
+  heart.bezierCurveTo(-0.5, 0.6, -0.2, 0.85, 0, 1)
+  heart.bezierCurveTo(0.2, 0.85, 0.5, 0.6, 0.5, 0.3)
+  heart.bezierCurveTo(0.5, 0, 0, 0, 0, 0.25)
+
+  const geometry = new THREE.ExtrudeGeometry(heart, {
+    depth: 0.18,
+    bevelEnabled: true,
+    bevelThickness: 0.06,
+    bevelSize: 0.05,
+    bevelSegments: 2,
+    steps: 1,
+  })
+  geometry.center()
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xff5a7a,
+    emissive: 0x5a0d1f,
+    emissiveIntensity: 0.35,
+    roughness: 0.4,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0,
+  })
+
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.scale.set(0.45, 0.45, 0.45)
+  mesh.rotation.set(0, 0, Math.PI)
+  mesh.visible = false
+  return mesh
+}
+
+const kissHeart = createKissHeartMesh()
+if (kissHeart) {
+  scene.add(kissHeart)
+}
+
+const createKissHint = () => {
+  const hint = document.createElement('div')
+  hint.textContent = 'Press B щоб поцілуватись'
+  hint.style.position = 'fixed'
+  hint.style.left = '50%'
+  hint.style.bottom = '70px'
+  hint.style.transform = 'translateX(-50%)'
+  hint.style.padding = '8px 14px'
+  hint.style.borderRadius = '10px'
+  hint.style.background = 'rgba(16, 18, 24, 0.85)'
+  hint.style.color = '#f7e9ef'
+  hint.style.fontSize = '14px'
+  hint.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+  hint.style.letterSpacing = '0.2px'
+  hint.style.pointerEvents = 'none'
+  hint.style.whiteSpace = 'nowrap'
+  hint.style.display = 'none'
+  hint.style.boxShadow = '0 10px 22px rgba(0,0,0,0.28)'
+  document.body.appendChild(hint)
+  return hint
+}
+
+const kissHint = createKissHint()
+
 const heroBounds = new THREE.Box3().setFromObject(hero)
 const heroSize = new THREE.Vector3()
 heroBounds.getSize(heroSize)
@@ -297,12 +361,16 @@ const forest = createForest({
 scene.add(forest)
 
 const keys = new Set()
+let kissRequested = false
 const onKeyDown = (event) => {
   const key = event.key.toLowerCase()
   const code = event.code
   keys.add(key)
   if (code) {
     keys.add(code)
+  }
+  if (key === 'b' || code === 'KeyB') {
+    kissRequested = true
   }
   propSystem.handleKeyDown(event)
 }
@@ -327,6 +395,16 @@ const targetQuat = new THREE.Quaternion()
 const heroMidpoint = new THREE.Vector3()
 const cameraOffset = new THREE.Vector3()
 const tmpVec = new THREE.Vector3()
+const tmpVecB = new THREE.Vector3()
+const heroForward = new THREE.Vector3()
+const heroTwoForward = new THREE.Vector3()
+
+const kissState = {
+  active: false,
+  timer: 0,
+  duration: 1.6,
+  cooldown: 0,
+}
 
 const hasAny = (list) => list.some((key) => keys.has(key))
 
@@ -401,32 +479,72 @@ const updateSharedCamera = () => {
   controls.target.copy(heroMidpoint)
 }
 
+const areFacingEachOther = () => {
+  heroForward.set(0, 0, 1).applyQuaternion(hero.quaternion)
+  heroTwoForward.set(0, 0, 1).applyQuaternion(heroTwo.quaternion)
+  tmpVec.copy(heroTwo.position).sub(hero.position).normalize()
+  tmpVecB.copy(hero.position).sub(heroTwo.position).normalize()
+  const facingA = heroForward.dot(tmpVec) > 0.6
+  const facingB = heroTwoForward.dot(tmpVecB) > 0.6
+  return facingA && facingB
+}
+
 const clock = new THREE.Clock()
 const animate = () => {
   requestAnimationFrame(animate)
   const delta = clock.getDelta()
   const time = clock.getElapsedTime()
 
-  updateHero(
-    hero,
-    {
-      forward: ['w', 'KeyW'],
-      backward: ['s', 'KeyS'],
-      left: ['a', 'KeyA'],
-      right: ['d', 'KeyD'],
-    },
-    delta
-  )
-  updateHero(
-    heroTwo,
-    {
-      forward: ['arrowup'],
-      backward: ['arrowdown'],
-      left: ['arrowleft'],
-      right: ['arrowright'],
-    },
-    delta
-  )
+  if (kissState.cooldown > 0) {
+    kissState.cooldown = Math.max(0, kissState.cooldown - delta)
+  }
+
+  const heroDistance = hero.position.distanceTo(heroTwo.position)
+  const canKiss =
+    heroDistance < 0.6 && areFacingEachOther() && kissState.cooldown <= 0
+
+  if (kissRequested && canKiss && !kissState.active) {
+    kissState.active = true
+    kissState.timer = 0
+    kissState.cooldown = kissState.duration + 0.4
+  }
+  kissRequested = false
+
+  if (kissState.active) {
+    updateHero(
+      hero,
+      { forward: [], backward: [], left: [], right: [] },
+      delta
+    )
+    updateHero(
+      heroTwo,
+      { forward: [], backward: [], left: [], right: [] },
+      delta
+    )
+    hero.lookAt(heroTwo.position.x, hero.position.y, heroTwo.position.z)
+    heroTwo.lookAt(hero.position.x, heroTwo.position.y, hero.position.z)
+  } else {
+    updateHero(
+      hero,
+      {
+        forward: ['w', 'KeyW'],
+        backward: ['s', 'KeyS'],
+        left: ['a', 'KeyA'],
+        right: ['d', 'KeyD'],
+      },
+      delta
+    )
+    updateHero(
+      heroTwo,
+      {
+        forward: ['arrowup'],
+        backward: ['arrowdown'],
+        left: ['arrowleft'],
+        right: ['arrowright'],
+      },
+      delta
+    )
+  }
   updateSharedCamera()
   updateWater(water, time)
   swanSystem.updateSwans(time, delta)
@@ -436,6 +554,42 @@ const animate = () => {
   const heroDist = hero.position.distanceTo(blanketCenter)
   const heroTwoDist = heroTwo.position.distanceTo(blanketCenter)
   updateBlanket(heroDist <= heroTwoDist ? hero.position : heroTwo.position, delta)
+
+  if (kissHeart) {
+    if (kissState.active) {
+      kissState.timer += delta
+      const t = Math.min(kissState.timer / kissState.duration, 1)
+      const pop = t < 0.3 ? t / 0.3 : 1
+      const fade = t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1
+      heroMidpoint.copy(hero.position).add(heroTwo.position).multiplyScalar(0.5)
+      kissHeart.visible = true
+      kissHeart.position.set(
+        heroMidpoint.x,
+        heroMidpoint.y + 0.9 + t * 0.25 + Math.sin(time * 6) * 0.03,
+        heroMidpoint.z
+      )
+      kissHeart.scale.setScalar(0.35 + pop * 0.35)
+      kissHeart.rotation.y = Math.PI + Math.sin(time * 2) * 0.15
+      kissHeart.material.opacity = Math.max(0, fade)
+      if (t >= 1) {
+        kissState.active = false
+        kissHeart.visible = false
+        kissHeart.material.opacity = 0
+      }
+    } else {
+      kissHeart.visible = false
+      kissHeart.material.opacity = 0
+    }
+  }
+
+  if (kissHint) {
+    const showHint =
+      !kissState.active &&
+      kissState.cooldown <= 0 &&
+      heroDistance < 0.8 &&
+      areFacingEachOther()
+    kissHint.style.display = showHint ? 'block' : 'none'
+  }
 
   controls.update()
   renderer.render(scene, camera)
