@@ -332,6 +332,133 @@ const createKissHint = () => {
 
 const kissHint = createKissHint()
 
+const createEdgeSign = (text) => {
+  const width = 640
+  const height = 320
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.clearRect(0, 0, width, height)
+  ctx.fillStyle = 'rgba(16, 18, 24, 0.85)'
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'
+  ctx.lineWidth = 6
+  const radius = 28
+  ctx.beginPath()
+  ctx.moveTo(radius, 0)
+  ctx.lineTo(width - radius, 0)
+  ctx.quadraticCurveTo(width, 0, width, radius)
+  ctx.lineTo(width, height - radius)
+  ctx.quadraticCurveTo(width, height, width - radius, height)
+  ctx.lineTo(radius, height)
+  ctx.quadraticCurveTo(0, height, 0, height - radius)
+  ctx.lineTo(0, radius)
+  ctx.quadraticCurveTo(0, 0, radius, 0)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+
+  ctx.fillStyle = '#f7e9ef'
+  ctx.font = 'bold 26px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+
+  const wrapText = (value, maxWidth) => {
+    const words = value.split(' ')
+    const lines = []
+    let line = ''
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line)
+        line = word
+      } else {
+        line = test
+      }
+    }
+    if (line) lines.push(line)
+    return lines
+  }
+
+  const lines = wrapText(text, width - 80)
+  const lineHeight = 34
+  const totalHeight = lines.length * lineHeight
+  const startY = height / 2 - totalHeight / 2 + lineHeight / 2
+  lines.forEach((line, index) => {
+    ctx.fillText(line, width / 2, startY + index * lineHeight)
+  })
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const geometry = new THREE.PlaneGeometry(2.3, 0.9)
+  const sign = new THREE.Mesh(geometry, material)
+  sign.visible = true
+  sign.userData.baseScale = 1
+  sign.renderOrder = 2
+  return sign
+}
+
+const edgeSignLeft = createEdgeSign(
+  'Відгадайте загадку, щоб відкрити новий рівень'
+)
+const edgeSignRight = createEdgeSign(
+  'Відгадайте загадку, щоб відкрити новий рівень'
+)
+const findRoadCenterZ = (x) => {
+  const steps = 50
+  let bestZ = shoreZ + 1.0
+  let bestMask = -1
+  for (let i = 0; i <= steps; i += 1) {
+    const z = bounds.minZ + (bounds.maxZ - bounds.minZ) * (i / steps)
+    const mask = getRoadMaskAt(x, z)
+    if (mask > bestMask) {
+      bestMask = mask
+      bestZ = z
+    }
+  }
+  return bestZ
+}
+const edgeSignX = bounds.minX + 0.2
+const edgeSignZ = findRoadCenterZ(edgeSignX)
+if (edgeSignLeft && edgeSignRight) {
+  scene.add(edgeSignLeft, edgeSignRight)
+  edgeSignLeft.position.set(
+    edgeSignX,
+    getGroundHeightAt(edgeSignX, edgeSignZ) + 0.75,
+    edgeSignZ
+  )
+  edgeSignRight.position.set(
+    edgeSignX,
+    getGroundHeightAt(edgeSignX, edgeSignZ) + 0.75,
+    edgeSignZ
+  )
+  edgeSignLeft.position.y += 0.4
+  edgeSignRight.position.y += 0.4
+  const signTargetX = THREE.MathUtils.clamp(0, bounds.minX, bounds.maxX)
+  const signTargetZ = edgeSignZ
+  const signFacing = Math.atan2(
+    signTargetX - edgeSignX,
+    signTargetZ - edgeSignZ
+  )
+  edgeSignLeft.rotation.y = signFacing
+  edgeSignRight.rotation.y = signFacing
+  edgeSignLeft.userData.triggerPos = edgeSignLeft.position.clone()
+  edgeSignRight.userData.triggerPos = edgeSignRight.position.clone()
+  edgeSignLeft.userData.triggerRadius = 1.6
+  edgeSignRight.userData.triggerRadius = 1.6
+}
+
 const heroBounds = new THREE.Box3().setFromObject(hero)
 const heroSize = new THREE.Vector3()
 heroBounds.getSize(heroSize)
@@ -356,6 +483,8 @@ const swanSystem = createSwanSystem(
   waterDepth
 )
 
+const edgeSignZones = [{ x: edgeSignX, z: edgeSignZ, radius: 1.2 }]
+
 const forest = createForest({
   bounds,
   shoreZ,
@@ -363,6 +492,7 @@ const forest = createForest({
   getGroundHeightAt,
   getRoadMaskAt,
   blanketPosition: { x: 1.2, y: 0.2346605718, z: -0.3 },
+  noSpawnZones: edgeSignZones,
 })
 scene.add(forest)
 
@@ -653,6 +783,24 @@ const animate = () => {
       hero.userData.limbs.leftArm.userData.hugZ = 0
       hero.userData.limbs.rightArm.userData.hugZ = 0
     }
+  }
+
+  if (edgeSignLeft && edgeSignRight) {
+    const triggerPos = edgeSignLeft.userData.triggerPos
+    const triggerRadius = edgeSignLeft.userData.triggerRadius ?? 1.6
+    let endHit = false
+    if (triggerPos) {
+      endHit =
+        hero.position.distanceTo(triggerPos) < triggerRadius ||
+        heroTwo.position.distanceTo(triggerPos) < triggerRadius
+    } else {
+      const edgeThreshold = 0.7
+      endHit =
+        hero.position.x > bounds.maxX - edgeThreshold ||
+        heroTwo.position.x > bounds.maxX - edgeThreshold
+    }
+    edgeSignLeft.visible = endHit
+    edgeSignRight.visible = false
   }
 
   controls.update()

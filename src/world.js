@@ -369,6 +369,7 @@ export const createForest = ({
   getRoadMaskAt,
   blanketPosition,
   blanketRadius = 0.9,
+  noSpawnZones = [],
 }) => {
   const group = new THREE.Group()
   const treeCount = 16
@@ -410,6 +411,9 @@ export const createForest = ({
   const blanketCenter = blanketPosition
     ? new THREE.Vector2(blanketPosition.x, blanketPosition.z)
     : null
+  const zones = noSpawnZones.map(
+    (zone) => new THREE.Vector2(zone.x, zone.z)
+  )
   let placed = 0
   let attempts = 0
 
@@ -421,6 +425,15 @@ export const createForest = ({
     if (dist < 1.6) continue
     if (blanketCenter && blanketCenter.distanceTo(new THREE.Vector2(x, z)) < blanketRadius)
       continue
+    let blocked = false
+    for (let i = 0; i < zones.length; i += 1) {
+      const radius = noSpawnZones[i].radius ?? 1
+      if (zones[i].distanceTo(new THREE.Vector2(x, z)) < radius) {
+        blocked = true
+        break
+      }
+    }
+    if (blocked) continue
 
     if (getRoadMaskAt && getRoadMaskAt(x, z) > 0.35) continue
     const y = getGroundHeightAt(x, z)
@@ -466,6 +479,15 @@ export const createForest = ({
     if (dist < 1.1) continue
     if (blanketCenter && blanketCenter.distanceTo(new THREE.Vector2(x, z)) < blanketRadius)
       continue
+    let blocked = false
+    for (let i = 0; i < zones.length; i += 1) {
+      const radius = noSpawnZones[i].radius ?? 1
+      if (zones[i].distanceTo(new THREE.Vector2(x, z)) < radius) {
+        blocked = true
+        break
+      }
+    }
+    if (blocked) continue
 
     if (getRoadMaskAt && getRoadMaskAt(x, z) > 0.35) continue
     const y = getGroundHeightAt(x, z)
