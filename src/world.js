@@ -188,12 +188,13 @@ const createSwan = (bodyColor) => {
 
   const neckGeometry = new THREE.CylinderGeometry(0.02, 0.03, 0.26, 12)
   const neck = new THREE.Mesh(neckGeometry, bodyMaterial)
-  neck.position.set(0, 0.16, 0.12)
+  neck.position.set(0, 0.175, 0.12)
   neck.rotation.x = -Math.PI * 0.1
 
   const headGeometry = new THREE.SphereGeometry(0.05, 12, 10)
   const head = new THREE.Mesh(headGeometry, bodyMaterial)
-  head.position.set(0, 0.3, 0.18)
+  head.position.set(0, 0.285, 0.165)
+  head.rotation.x = Math.PI * 0.05
 
   const beakGeometry = new THREE.ConeGeometry(0.025, 0.08, 10)
   const beakMaterial = new THREE.MeshStandardMaterial({
@@ -201,7 +202,7 @@ const createSwan = (bodyColor) => {
     roughness: 0.5,
   })
   const beak = new THREE.Mesh(beakGeometry, beakMaterial)
-  beak.position.set(0, 0.29, 0.25)
+  beak.position.set(0, 0.295, 0.27)
   beak.rotation.x = Math.PI / 2
 
   swan.add(body, neck, head, beak)
@@ -216,11 +217,35 @@ export const createSwanSystem = (
   waterDepth
 ) => {
   const swans = []
+  const wakeSegments = 18
+  const wakeLength = 1.2
+  const wakeSpread = 0.14
+  const wakeLift = 0.005
+  const wakeMaterial = new THREE.LineBasicMaterial({
+    color: 0xdff6ff,
+    transparent: true,
+    opacity: 0.6,
+    depthWrite: false,
+  })
+
+  const createWakeLine = () => {
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(wakeSegments * 3)
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const line = new THREE.Line(geometry, wakeMaterial)
+    line.frustumCulled = false
+    return line
+  }
+
   const addSwan = (color, id) => {
     const swan = createSwan(color)
-    swan.userData = { id }
+    const leftWake = createWakeLine()
+    const rightWake = createWakeLine()
+    const centerWake = createWakeLine()
+    swan.userData = { id, leftWake, rightWake, centerWake }
     swans.push(swan)
     scene.add(swan)
+    scene.add(leftWake, rightWake, centerWake)
   }
 
   addSwan(0xffffff, 0)
@@ -302,6 +327,33 @@ export const createSwanSystem = (
       const dirZ = aheadZ - worldZ
       swan.rotation.y = Math.atan2(dirX, dirZ)
       swan.rotation.z = Math.sin(swanStoryTime * 1.3 + id) * 0.02
+
+      const dirLen = Math.hypot(dirX, dirZ) || 1
+      const ndx = dirX / dirLen
+      const ndz = dirZ / dirLen
+      const sideX = ndz
+      const sideZ = -ndx
+
+      const updateWake = (line, sideSign) => {
+        const positions = line.geometry.attributes.position
+        for (let i = 0; i < wakeSegments; i += 1) {
+          const t = i / (wakeSegments - 1)
+          const dist = wakeLength * t
+          const offset = wakeSpread * t * sideSign
+          const px = worldX - ndx * dist + sideX * offset
+          const pz = worldZ - ndz * dist + sideZ * offset
+          const localX = px - waterCenter.x
+          const localY = -(pz - waterCenter.y)
+          const wave = waterWaveAt(localX, localY, time)
+          const py = waterBaseY + wave + wakeLift
+          positions.setXYZ(i, px, py, pz)
+        }
+        positions.needsUpdate = true
+      }
+
+      updateWake(swan.userData.leftWake, 1)
+      updateWake(swan.userData.rightWake, -1)
+      updateWake(swan.userData.centerWake, 0)
     }
     swanStoryTime += delta
   }
