@@ -222,6 +222,117 @@ const placeOnGround = (object, x, z, lift = 0) => {
   object.position.y += groundY - box.min.y
 }
 
+const createFloralTexture = () => {
+  const size = 256
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.fillStyle = '#d86a7a'
+  ctx.fillRect(0, 0, size, size)
+
+  const drawFlower = (cx, cy, petals, radius, petalColor, centerColor) => {
+    ctx.fillStyle = petalColor
+    for (let i = 0; i < petals; i += 1) {
+      const angle = (i / petals) * Math.PI * 2
+      const px = cx + Math.cos(angle) * radius
+      const py = cy + Math.sin(angle) * radius
+      ctx.beginPath()
+      ctx.ellipse(px, py, radius * 0.45, radius * 0.75, angle, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.fillStyle = centerColor
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius * 0.4, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const grid = 6
+  const cell = size / grid
+  for (let y = 0; y < grid; y += 1) {
+    for (let x = 0; x < grid; x += 1) {
+      const jitterX = (Math.sin((x + 1) * 3.2) * 0.15 + 0.5) * cell
+      const jitterY = (Math.cos((y + 1) * 2.7) * 0.15 + 0.5) * cell
+      const cx = x * cell + jitterX
+      const cy = y * cell + jitterY
+      const petals = 5 + ((x + y) % 2)
+      const radius = cell * 0.18
+      drawFlower(cx, cy, petals, radius, '#f6c0d0', '#f7e1a0')
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.repeat.set(3, 2)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+  return texture
+}
+
+const createThickBlanketGeometry = (width, height, segW, segH, thickness) => {
+  const base = new THREE.PlaneGeometry(width, height, segW, segH)
+  const basePositions = base.attributes.position
+  const topCount = basePositions.count
+  const positions = new Float32Array(topCount * 2 * 3)
+
+  for (let i = 0; i < topCount; i += 1) {
+    const x = basePositions.getX(i)
+    const y = basePositions.getY(i)
+    const i3 = i * 3
+    positions[i3] = x
+    positions[i3 + 1] = y
+    positions[i3 + 2] = 0
+
+    const j3 = (i + topCount) * 3
+    positions[j3] = x
+    positions[j3 + 1] = y
+    positions[j3 + 2] = -thickness
+  }
+
+  const indices = []
+  const baseIndex = base.index?.array
+  if (baseIndex) {
+    for (let i = 0; i < baseIndex.length; i += 3) {
+      indices.push(baseIndex[i], baseIndex[i + 1], baseIndex[i + 2])
+      indices.push(
+        baseIndex[i] + topCount,
+        baseIndex[i + 2] + topCount,
+        baseIndex[i + 1] + topCount
+      )
+    }
+  }
+
+  const row = segW + 1
+  const addSide = (a, b) => {
+    indices.push(a, a + topCount, b + topCount)
+    indices.push(a, b + topCount, b)
+  }
+
+  for (let i = 0; i < segW; i += 1) {
+    addSide(i, i + 1)
+  }
+  const lastRowStart = segH * row
+  for (let i = 0; i < segW; i += 1) {
+    addSide(lastRowStart + i + 1, lastRowStart + i)
+  }
+  for (let j = 0; j < segH; j += 1) {
+    addSide((j + 1) * row, j * row)
+  }
+  for (let j = 0; j < segH; j += 1) {
+    addSide(j * row + segW, (j + 1) * row + segW)
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.userData = { topCount, thickness }
+  return geometry
+}
+
 const scaleToHeight = (object, targetHeight) => {
   const box = new THREE.Box3().setFromObject(object)
   const size = new THREE.Vector3()
@@ -236,13 +347,22 @@ const picnicZ = shoreZ + 0.8
 const heartMesh = createHeartMesh()
 const bottleGroup = createBottleGroup()
 
-const blanketGeometry = new THREE.PlaneGeometry(1.8, 1.2, 16, 12)
+const blanketThickness = 0.06
+const blanketGeometry = createThickBlanketGeometry(
+  1.8,
+  1.2,
+  16,
+  12,
+  blanketThickness
+)
 
+const blanketTexture = createFloralTexture()
 const blanketMaterial = new THREE.MeshStandardMaterial({
-  color: 0xd86a7a,
-  roughness: 0.8,
+  color: 0xffffff,
+  roughness: 0.85,
   metalness: 0.05,
   side: THREE.DoubleSide,
+  map: blanketTexture ?? undefined,
 })
 
 const blanket = new THREE.Mesh(blanketGeometry, blanketMaterial)
@@ -254,15 +374,17 @@ const conformBlanketToGround = () => {
   blanket.updateMatrixWorld(true)
   const inverse = new THREE.Matrix4().copy(blanket.matrixWorld).invert()
   const positions = blanketGeometry.attributes.position
+  const { topCount, thickness } = blanketGeometry.userData
   const local = new THREE.Vector3()
   const world = new THREE.Vector3()
 
-  for (let i = 0; i < positions.count; i += 1) {
+  for (let i = 0; i < topCount; i += 1) {
     local.fromBufferAttribute(positions, i)
     world.copy(local).applyMatrix4(blanket.matrixWorld)
     world.y = getGroundHeightAt(world.x, world.z) + 0.01
     local.copy(world).applyMatrix4(inverse)
-    positions.setXYZ(i, local.x, local.y, local.z)
+    positions.setXYZ(i, local.x, local.y, local.z + thickness)
+    positions.setXYZ(i + topCount, local.x, local.y, local.z)
   }
 
   positions.needsUpdate = true
@@ -271,8 +393,15 @@ const conformBlanketToGround = () => {
 
 conformBlanketToGround()
 const blanketPositions = blanketGeometry.attributes.position
-const blanketBasePositions = new Float32Array(blanketPositions.array)
-const blanketDisplacements = new Float32Array(blanketPositions.count)
+const { topCount: blanketTopCount } = blanketGeometry.userData
+const blanketBasePositions = new Float32Array(blanketTopCount * 3)
+for (let i = 0; i < blanketTopCount; i += 1) {
+  const i3 = i * 3
+  blanketBasePositions[i3] = blanketPositions.getX(i)
+  blanketBasePositions[i3 + 1] = blanketPositions.getY(i)
+  blanketBasePositions[i3 + 2] = blanketPositions.getZ(i)
+}
+const blanketDisplacements = new Float32Array(blanketTopCount)
 
 scene.add(blanket)
 
@@ -436,6 +565,23 @@ placeOnGround(heartMesh, -0.6, picnicZ + 0.05)
 placeOnGround(bottleGroup, 0.5, picnicZ - 0.15)
 scene.add(heartMesh, bottleGroup)
 
+const heroRadius = 0.5 * Math.max(heroSize.x, heroSize.z)
+const createPropBody = (mesh) => {
+  const box = new THREE.Box3().setFromObject(mesh)
+  const size = new THREE.Vector3()
+  box.getSize(size)
+  return {
+    mesh,
+    velocity: new THREE.Vector3(),
+    angular: new THREE.Vector3(),
+    radius: 0.5 * Math.max(size.x, size.z),
+    halfHeight: size.y / 2,
+    cooldown: 0,
+  }
+}
+
+const props = [createPropBody(heartMesh), createPropBody(bottleGroup)]
+
 const keys = new Set()
 const onKeyDown = (event) => {
   keys.add(event.key.toLowerCase())
@@ -453,6 +599,10 @@ const pressRadius = 0.55
 const pressStrength = 0.08
 const pressStiffness = 12
 const minBlanketDown = -0.008
+const gravity = 3.2
+const propFriction = 0.85
+const propBounce = 0.2
+const propAngularDamp = 0.92
 
 const animate = () => {
   requestAnimationFrame(animate)
@@ -493,11 +643,79 @@ const animate = () => {
     hero.lookAt(facing.x, hero.position.y, facing.z)
   }
 
+  for (const prop of props) {
+    if (prop.cooldown > 0) {
+      prop.cooldown = Math.max(0, prop.cooldown - delta)
+    }
+
+    prop.velocity.y -= gravity * delta
+    prop.mesh.position.addScaledVector(prop.velocity, delta)
+
+    if (prop.mesh.position.x < bounds.minX) {
+      prop.mesh.position.x = bounds.minX
+      prop.velocity.x *= -0.3
+    } else if (prop.mesh.position.x > bounds.maxX) {
+      prop.mesh.position.x = bounds.maxX
+      prop.velocity.x *= -0.3
+    }
+
+    if (prop.mesh.position.z < bounds.minZ) {
+      prop.mesh.position.z = bounds.minZ
+      prop.velocity.z *= -0.3
+    } else if (prop.mesh.position.z > bounds.maxZ) {
+      prop.mesh.position.z = bounds.maxZ
+      prop.velocity.z *= -0.3
+    }
+
+    const floorY =
+      getGroundHeightAt(prop.mesh.position.x, prop.mesh.position.z) +
+      prop.halfHeight
+    if (prop.mesh.position.y < floorY) {
+      prop.mesh.position.y = floorY
+      if (prop.velocity.y < 0) {
+        prop.velocity.y *= -propBounce
+      }
+      prop.velocity.x *= propFriction
+      prop.velocity.z *= propFriction
+    }
+
+    const dx = prop.mesh.position.x - hero.position.x
+    const dz = prop.mesh.position.z - hero.position.z
+    const dist = Math.hypot(dx, dz)
+    if (dist < heroRadius + prop.radius && prop.cooldown <= 0) {
+      let dirX = dx
+      let dirZ = dz
+      if (dist < 0.0001) {
+        const angle = Math.random() * Math.PI * 2
+        dirX = Math.cos(angle)
+        dirZ = Math.sin(angle)
+      } else {
+        dirX /= dist
+        dirZ /= dist
+      }
+
+      prop.velocity.x += dirX * 0.9
+      prop.velocity.z += dirZ * 0.9
+      prop.velocity.y += 0.6
+      prop.angular.set(
+        (Math.random() - 0.5) * 3.2,
+        (Math.random() - 0.5) * 3.2,
+        (Math.random() - 0.5) * 3.2
+      )
+      prop.cooldown = 0.35
+    }
+
+    prop.angular.multiplyScalar(propAngularDamp)
+    prop.mesh.rotation.x += prop.angular.x * delta
+    prop.mesh.rotation.y += prop.angular.y * delta
+    prop.mesh.rotation.z += prop.angular.z * delta
+  }
+
   heroLocal.copy(hero.position)
   blanket.worldToLocal(heroLocal)
   const smoothing = 1 - Math.exp(-pressStiffness * delta)
 
-  for (let i = 0; i < blanketPositions.count; i += 1) {
+  for (let i = 0; i < blanketTopCount; i += 1) {
     const baseIndex = i * 3
     const baseX = blanketBasePositions[baseIndex]
     const baseY = blanketBasePositions[baseIndex + 1]
@@ -516,7 +734,9 @@ const animate = () => {
     const current = blanketDisplacements[i]
     const next = current + (target - current) * smoothing
     blanketDisplacements[i] = next
-    blanketPositions.setZ(i, baseZ + next)
+    const topZ = baseZ + next
+    blanketPositions.setXYZ(i, baseX, baseY, topZ)
+    blanketPositions.setXYZ(i + blanketTopCount, baseX, baseY, topZ - blanketThickness)
   }
   blanketPositions.needsUpdate = true
   blanketGeometry.computeVertexNormals()
