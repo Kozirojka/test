@@ -34,12 +34,12 @@ const { blanket, updateBlanket, getSurfaceHeightAt } = createBlanket({
 })
 scene.add(blanket)
 
-const createHero = () => {
+const createHero = ({ bodyColor, hatColor } = {}) => {
   const hero = new THREE.Group()
 
   const bodyGeometry = new THREE.CylinderGeometry(0.18, 0.22, 0.5, 24)
   const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2c5cff,
+    color: bodyColor ?? 0x2c5cff,
     roughness: 0.5,
     metalness: 0.1,
   })
@@ -57,7 +57,7 @@ const createHero = () => {
 
   const hatGeometry = new THREE.CylinderGeometry(0.12, 0.14, 0.08, 20)
   const hatMaterial = new THREE.MeshStandardMaterial({
-    color: 0x1d1c2c,
+    color: hatColor ?? 0x1d1c2c,
     roughness: 0.7,
   })
   const hat = new THREE.Mesh(hatGeometry, hatMaterial)
@@ -71,8 +71,13 @@ const hero = createHero()
 const heroStartZ = picnicZ + 0.9
 hero.position.set(0, getGroundHeightAt(0, heroStartZ), heroStartZ)
 scene.add(hero)
+
+const heroTwo = createHero({ bodyColor: 0xff6b6b, hatColor: 0x6b1d1d })
+const heroTwoStartZ = picnicZ + 0.6
+heroTwo.position.set(0.7, getGroundHeightAt(0.7, heroTwoStartZ), heroTwoStartZ)
+scene.add(heroTwo)
+
 controls.target.copy(hero.position)
-const lastHeroPosition = hero.position.clone()
 
 const heroBounds = new THREE.Box3().setFromObject(hero)
 const heroSize = new THREE.Vector3()
@@ -81,6 +86,7 @@ heroBounds.getSize(heroSize)
 const propSystem = createPropSystem({
   scene,
   hero,
+  heroTwo,
   heroSize,
   picnicZ,
   bounds,
@@ -135,9 +141,13 @@ const move = new THREE.Vector3()
 const forward = new THREE.Vector3()
 const right = new THREE.Vector3()
 const targetQuat = new THREE.Quaternion()
-const deltaHero = new THREE.Vector3()
+const heroMidpoint = new THREE.Vector3()
+const cameraOffset = new THREE.Vector3()
+const tmpVec = new THREE.Vector3()
 
-const updateHero = (delta) => {
+const hasAny = (list) => list.some((key) => keys.has(key))
+
+const updateHero = (heroTarget, input, delta) => {
   camera.getWorldDirection(forward)
   forward.y = 0
   if (forward.lengthSq() > 0) {
@@ -146,49 +156,54 @@ const updateHero = (delta) => {
   right.crossVectors(forward, worldUp).normalize()
 
   move.set(0, 0, 0)
-  if (keys.has('w') || keys.has('KeyW') || keys.has('arrowup')) {
+  if (hasAny(input.forward)) {
     move.add(forward)
   }
-  if (keys.has('s') || keys.has('KeyS') || keys.has('arrowdown')) {
+  if (hasAny(input.backward)) {
     move.sub(forward)
   }
-  if (keys.has('a') || keys.has('KeyA') || keys.has('arrowleft')) {
+  if (hasAny(input.left)) {
     move.sub(right)
   }
-  if (keys.has('d') || keys.has('KeyD') || keys.has('arrowright')) {
+  if (hasAny(input.right)) {
     move.add(right)
   }
 
   if (move.lengthSq() > 0) {
     move.normalize().multiplyScalar(heroSpeed * delta)
-    hero.position.add(move)
+    heroTarget.position.add(move)
 
-    hero.position.x = THREE.MathUtils.clamp(
-      hero.position.x,
+    heroTarget.position.x = THREE.MathUtils.clamp(
+      heroTarget.position.x,
       bounds.minX,
       bounds.maxX
     )
-    hero.position.z = THREE.MathUtils.clamp(
-      hero.position.z,
+    heroTarget.position.z = THREE.MathUtils.clamp(
+      heroTarget.position.z,
       bounds.minZ,
       bounds.maxZ
     )
 
-    hero.position.y = getGroundHeightAt(hero.position.x, hero.position.z)
+    heroTarget.position.y = getGroundHeightAt(
+      heroTarget.position.x,
+      heroTarget.position.z
+    )
     const targetAngle = Math.atan2(move.x, move.z)
     targetQuat.setFromAxisAngle(worldUp, targetAngle)
     const turnAlpha = 1 - Math.exp(-heroTurnSpeed * delta)
-    hero.quaternion.slerp(targetQuat, turnAlpha)
+    heroTarget.quaternion.slerp(targetQuat, turnAlpha)
   }
 }
 
-const syncCameraToHero = () => {
-  if (!hero.position.equals(lastHeroPosition)) {
-    deltaHero.copy(hero.position).sub(lastHeroPosition)
-    camera.position.add(deltaHero)
-    controls.target.add(deltaHero)
-    lastHeroPosition.copy(hero.position)
-  }
+const updateSharedCamera = () => {
+  heroMidpoint.copy(hero.position).add(heroTwo.position).multiplyScalar(0.5)
+  cameraOffset.copy(camera.position).sub(controls.target)
+  const heroDistance = hero.position.distanceTo(heroTwo.position)
+  const desiredDistance = THREE.MathUtils.clamp(3 + heroDistance * 0.8, 3, 7)
+  const currentDistance = cameraOffset.length() || 1
+  cameraOffset.multiplyScalar(desiredDistance / currentDistance)
+  camera.position.copy(heroMidpoint).add(cameraOffset)
+  controls.target.copy(heroMidpoint)
 }
 
 const clock = new THREE.Clock()
@@ -197,13 +212,35 @@ const animate = () => {
   const delta = clock.getDelta()
   const time = clock.getElapsedTime()
 
-  updateHero(delta)
-  syncCameraToHero()
+  updateHero(
+    hero,
+    {
+      forward: ['w', 'KeyW'],
+      backward: ['s', 'KeyS'],
+      left: ['a', 'KeyA'],
+      right: ['d', 'KeyD'],
+    },
+    delta
+  )
+  updateHero(
+    heroTwo,
+    {
+      forward: ['arrowup'],
+      backward: ['arrowdown'],
+      left: ['arrowleft'],
+      right: ['arrowright'],
+    },
+    delta
+  )
+  updateSharedCamera()
   updateWater(water, time)
   swanSystem.updateSwans(time, delta)
   propSystem.updateProps(delta)
   propSystem.updateActionHint()
-  updateBlanket(hero.position, delta)
+  const blanketCenter = tmpVec.set(1.2, 0, -0.3)
+  const heroDist = hero.position.distanceTo(blanketCenter)
+  const heroTwoDist = heroTwo.position.distanceTo(blanketCenter)
+  updateBlanket(heroDist <= heroTwoDist ? hero.position : heroTwo.position, delta)
 
   controls.update()
   renderer.render(scene, camera)

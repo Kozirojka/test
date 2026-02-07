@@ -158,9 +158,9 @@ const scaleToHeight = (object, targetHeight) => {
   object.scale.multiplyScalar(factor)
 }
 
-const createActionHint = () => {
+const createActionHint = (text) => {
   const hint = document.createElement('div')
-  hint.textContent = '1. Підняти Press L'
+  hint.textContent = text
   hint.style.position = 'fixed'
   hint.style.left = '0'
   hint.style.top = '0'
@@ -182,7 +182,7 @@ const createActionHint = () => {
 
 const createOpenHint = () => {
   const hint = document.createElement('div')
-  hint.textContent = 'Press O щоб відкрити банку'
+  hint.textContent = 'Press O / T щоб відкрити банку'
   hint.style.position = 'fixed'
   hint.style.left = '50%'
   hint.style.bottom = '24px'
@@ -205,6 +205,7 @@ const createOpenHint = () => {
 export const createPropSystem = ({
   scene,
   hero,
+  heroTwo,
   heroSize,
   picnicZ,
   bounds,
@@ -274,18 +275,42 @@ export const createPropSystem = ({
     createPropBody(redCan),
     createPropBody(grayCan),
   ]
-  const actionHint = createActionHint()
+  const actionHint = createActionHint('1. Підняти Press L')
+  const actionHintTwo = heroTwo
+    ? createActionHint('Press E/R щоб підняти')
+    : null
   const openHint = createOpenHint()
   const actionProject = new THREE.Vector3()
-  const holdRight = new THREE.Object3D()
-  const holdLeft = new THREE.Object3D()
-  holdRight.position.set(0.28, 0.38, 0.22)
-  holdLeft.position.set(-0.28, 0.38, 0.22)
-  hero.add(holdRight, holdLeft)
+  const actionProjectTwo = new THREE.Vector3()
 
-  let activeProp = null
-  let heldRightProp = null
-  let heldLeftProp = null
+  const createHandState = (player, rightOffset, leftOffset) => {
+    const holdRight = new THREE.Object3D()
+    const holdLeft = new THREE.Object3D()
+    holdRight.position.copy(rightOffset)
+    holdLeft.position.copy(leftOffset)
+    player.add(holdRight, holdLeft)
+    return {
+      player,
+      holdRight,
+      holdLeft,
+      heldRightProp: null,
+      heldLeftProp: null,
+      activeProp: null,
+    }
+  }
+
+  const playerOne = createHandState(
+    hero,
+    new THREE.Vector3(0.28, 0.38, 0.22),
+    new THREE.Vector3(-0.28, 0.38, 0.22)
+  )
+  const playerTwo = heroTwo
+    ? createHandState(
+        heroTwo,
+        new THREE.Vector3(0.28, 0.38, 0.22),
+        new THREE.Vector3(-0.28, 0.38, 0.22)
+      )
+    : null
 
   const openEffects = []
 
@@ -349,6 +374,37 @@ export const createPropSystem = ({
   const propFriction = 0.85
   const propBounce = 0.2
   const propAngularDamp = 0.92
+  const dropRightDir = new THREE.Vector3()
+  const dropForwardDir = new THREE.Vector3()
+
+  const applyHeroImpulse = (prop, heroRef) => {
+    if (!heroRef) return
+    const dx = prop.mesh.position.x - heroRef.position.x
+    const dz = prop.mesh.position.z - heroRef.position.z
+    const dist = Math.hypot(dx, dz)
+    if (dist < heroRadius + prop.radius && prop.cooldown <= 0) {
+      let dirX = dx
+      let dirZ = dz
+      if (dist < 0.0001) {
+        const angle = Math.random() * Math.PI * 2
+        dirX = Math.cos(angle)
+        dirZ = Math.sin(angle)
+      } else {
+        dirX /= dist
+        dirZ /= dist
+      }
+
+      prop.velocity.x += dirX * 0.9
+      prop.velocity.z += dirZ * 0.9
+      prop.velocity.y += 0.6
+      prop.angular.set(
+        (Math.random() - 0.5) * 3.2,
+        (Math.random() - 0.5) * 3.2,
+        (Math.random() - 0.5) * 3.2
+      )
+      prop.cooldown = 0.35
+    }
+  }
 
   const updateProps = (delta) => {
     for (const prop of props) {
@@ -388,30 +444,9 @@ export const createPropSystem = ({
         prop.velocity.z *= propFriction
       }
 
-      const dx = prop.mesh.position.x - hero.position.x
-      const dz = prop.mesh.position.z - hero.position.z
-      const dist = Math.hypot(dx, dz)
-      if (dist < heroRadius + prop.radius && prop.cooldown <= 0) {
-        let dirX = dx
-        let dirZ = dz
-        if (dist < 0.0001) {
-          const angle = Math.random() * Math.PI * 2
-          dirX = Math.cos(angle)
-          dirZ = Math.sin(angle)
-        } else {
-          dirX /= dist
-          dirZ /= dist
-        }
-
-        prop.velocity.x += dirX * 0.9
-        prop.velocity.z += dirZ * 0.9
-        prop.velocity.y += 0.6
-        prop.angular.set(
-          (Math.random() - 0.5) * 3.2,
-          (Math.random() - 0.5) * 3.2,
-          (Math.random() - 0.5) * 3.2
-        )
-        prop.cooldown = 0.35
+      applyHeroImpulse(prop, hero)
+      if (heroTwo) {
+        applyHeroImpulse(prop, heroTwo)
       }
 
       prop.angular.multiplyScalar(propAngularDamp)
@@ -422,57 +457,79 @@ export const createPropSystem = ({
     updateOpenEffects(delta)
   }
 
-  const updateActionHint = () => {
-    if (heldLeftProp && heldRightProp) {
-      actionHint.style.display = 'none'
-    } else {
-      activeProp = null
-      let nearestDist = Infinity
-      for (const prop of props) {
-        if (prop.held) continue
-        const dx = prop.mesh.position.x - hero.position.x
-        const dz = prop.mesh.position.z - hero.position.z
-        const dist = Math.hypot(dx, dz)
-        const range = heroRadius + prop.radius + 0.2
-        if (dist < range && dist < nearestDist) {
-          nearestDist = dist
-          activeProp = prop
-        }
-      }
-
-      if (activeProp) {
-        const rect = renderer.domElement.getBoundingClientRect()
-        actionProject.copy(activeProp.mesh.position)
-        actionProject.y += activeProp.halfHeight + 0.05
-        actionProject.project(camera)
-        const screenX = (actionProject.x * 0.5 + 0.5) * rect.width + rect.left
-        const screenY = (-actionProject.y * 0.5 + 0.5) * rect.height + rect.top
-        actionHint.style.left = `${screenX}px`
-        actionHint.style.top = `${screenY}px`
-        actionHint.style.display = 'block'
-      } else {
-        actionHint.style.display = 'none'
+  const findNearestPropFor = (heroRef) => {
+    let nearest = null
+    let nearestDist = Infinity
+    for (const prop of props) {
+      if (prop.held) continue
+      const dx = prop.mesh.position.x - heroRef.position.x
+      const dz = prop.mesh.position.z - heroRef.position.z
+      const dist = Math.hypot(dx, dz)
+      const range = heroRadius + prop.radius + 0.2
+      if (dist < range && dist < nearestDist) {
+        nearestDist = dist
+        nearest = prop
       }
     }
-
-    const rightClosed =
-      heldRightProp && heldRightProp.isCan && !heldRightProp.opened
-    const leftClosed = heldLeftProp && heldLeftProp.isCan && !heldLeftProp.opened
-    openHint.style.display = rightClosed || leftClosed ? 'block' : 'none'
+    return nearest
   }
 
-  const attachToHand = (prop, hand) => {
+  const updateHintForPlayer = (playerState, hint, projector) => {
+    if (!playerState || !hint) return
+    if (playerState.heldLeftProp && playerState.heldRightProp) {
+      hint.style.display = 'none'
+      playerState.activeProp = null
+      return
+    }
+
+    const prop = findNearestPropFor(playerState.player)
+    playerState.activeProp = prop
+    if (prop) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      projector.copy(prop.mesh.position)
+      projector.y += prop.halfHeight + 0.05
+      projector.project(camera)
+      const screenX = (projector.x * 0.5 + 0.5) * rect.width + rect.left
+      const screenY = (-projector.y * 0.5 + 0.5) * rect.height + rect.top
+      hint.style.left = `${screenX}px`
+      hint.style.top = `${screenY}px`
+      hint.style.display = 'block'
+    } else {
+      hint.style.display = 'none'
+    }
+  }
+
+  const hasClosedCan = (playerState) =>
+    Boolean(
+      (playerState?.heldRightProp &&
+        playerState.heldRightProp.isCan &&
+        !playerState.heldRightProp.opened) ||
+        (playerState?.heldLeftProp &&
+          playerState.heldLeftProp.isCan &&
+          !playerState.heldLeftProp.opened)
+    )
+
+  const updateActionHint = () => {
+    updateHintForPlayer(playerOne, actionHint, actionProject)
+    if (playerTwo && actionHintTwo) {
+      updateHintForPlayer(playerTwo, actionHintTwo, actionProjectTwo)
+    }
+    openHint.style.display =
+      hasClosedCan(playerOne) || hasClosedCan(playerTwo) ? 'block' : 'none'
+  }
+
+  const attachToHand = (prop, playerState, hand) => {
     prop.held = true
     prop.velocity.set(0, 0, 0)
     prop.angular.set(0, 0, 0)
     prop.mesh.position.set(0, 0, 0)
     prop.mesh.rotation.set(0, 0, 0)
     if (hand === 'right') {
-      holdRight.add(prop.mesh)
-      heldRightProp = prop
+      playerState.holdRight.add(prop.mesh)
+      playerState.heldRightProp = prop
     } else {
-      holdLeft.add(prop.mesh)
-      heldLeftProp = prop
+      playerState.holdLeft.add(prop.mesh)
+      playerState.heldLeftProp = prop
     }
   }
 
@@ -494,29 +551,26 @@ export const createPropSystem = ({
     createOpenEffect(mouth)
   }
 
-  const dropFromHand = (prop, hand) => {
+  const dropFromHand = (prop, playerState, hand) => {
     if (!prop) return
-    const rightDir = new THREE.Vector3(1, 0, 0).applyQuaternion(
-      hero.quaternion
-    )
-    const forwardDir = new THREE.Vector3(0, 0, 1).applyQuaternion(
-      hero.quaternion
-    )
+    const player = playerState.player
+    dropRightDir.set(1, 0, 0).applyQuaternion(player.quaternion)
+    dropForwardDir.set(0, 0, 1).applyQuaternion(player.quaternion)
     const side = hand === 'right' ? 0.25 : -0.25
-    const dropX = hero.position.x + forwardDir.x * 0.6 + rightDir.x * side
-    const dropZ = hero.position.z + forwardDir.z * 0.6 + rightDir.z * side
+    const dropX = player.position.x + dropForwardDir.x * 0.6 + dropRightDir.x * side
+    const dropZ = player.position.z + dropForwardDir.z * 0.6 + dropRightDir.z * side
 
     if (hand === 'right') {
-      holdRight.remove(prop.mesh)
-      heldRightProp = null
+      playerState.holdRight.remove(prop.mesh)
+      playerState.heldRightProp = null
     } else {
-      holdLeft.remove(prop.mesh)
-      heldLeftProp = null
+      playerState.holdLeft.remove(prop.mesh)
+      playerState.heldLeftProp = null
     }
 
     scene.add(prop.mesh)
     placeOnSurface(prop.mesh, dropX, dropZ, propGroundEpsilon)
-    prop.velocity.set(forwardDir.x * 0.2, 0.2, forwardDir.z * 0.2)
+    prop.velocity.set(dropForwardDir.x * 0.2, 0.2, dropForwardDir.z * 0.2)
     prop.angular.set(
       (Math.random() - 0.5) * 1.2,
       (Math.random() - 0.5) * 1.2,
@@ -529,30 +583,75 @@ export const createPropSystem = ({
   const handleKeyDown = (event) => {
     const key = event.key.toLowerCase()
     const code = event.code
-    if ((key === 'l' || code === 'KeyL') && activeProp) {
-      if (!heldRightProp) {
-        attachToHand(activeProp, 'right')
-      } else if (!heldLeftProp) {
-        attachToHand(activeProp, 'left')
+    if ((key === 'l' || code === 'KeyL') && playerOne.activeProp) {
+      if (!playerOne.heldRightProp) {
+        attachToHand(playerOne.activeProp, playerOne, 'right')
+      } else if (!playerOne.heldLeftProp) {
+        attachToHand(playerOne.activeProp, playerOne, 'left')
       } else {
         return
       }
-      activeProp = null
+      playerOne.activeProp = null
       actionHint.style.display = 'none'
     }
     if (key === 'k' || code === 'KeyK') {
-      if (heldRightProp) {
-        dropFromHand(heldRightProp, 'right')
-      } else if (heldLeftProp) {
-        dropFromHand(heldLeftProp, 'left')
+      if (playerOne.heldRightProp) {
+        dropFromHand(playerOne.heldRightProp, playerOne, 'right')
+      } else if (playerOne.heldLeftProp) {
+        dropFromHand(playerOne.heldLeftProp, playerOne, 'left')
       }
     }
     if (key === 'o' || code === 'KeyO') {
-      if (heldRightProp) {
-        openCan(heldRightProp)
+      if (playerOne.heldRightProp) {
+        openCan(playerOne.heldRightProp)
       }
-      if (heldLeftProp) {
-        openCan(heldLeftProp)
+      if (playerOne.heldLeftProp) {
+        openCan(playerOne.heldLeftProp)
+      }
+    }
+
+    if (playerTwo) {
+      if (key === 'e' || code === 'KeyE') {
+        if (playerTwo.activeProp) {
+          if (!playerTwo.heldRightProp) {
+            attachToHand(playerTwo.activeProp, playerTwo, 'right')
+          } else if (!playerTwo.heldLeftProp) {
+            attachToHand(playerTwo.activeProp, playerTwo, 'left')
+          } else {
+            return
+          }
+          playerTwo.activeProp = null
+          if (actionHintTwo) {
+            actionHintTwo.style.display = 'none'
+          }
+        } else if (playerTwo.heldRightProp) {
+          dropFromHand(playerTwo.heldRightProp, playerTwo, 'right')
+        }
+      }
+      if (key === 'r' || code === 'KeyR') {
+        if (playerTwo.activeProp) {
+          if (!playerTwo.heldLeftProp) {
+            attachToHand(playerTwo.activeProp, playerTwo, 'left')
+          } else if (!playerTwo.heldRightProp) {
+            attachToHand(playerTwo.activeProp, playerTwo, 'right')
+          } else {
+            return
+          }
+          playerTwo.activeProp = null
+          if (actionHintTwo) {
+            actionHintTwo.style.display = 'none'
+          }
+        } else if (playerTwo.heldLeftProp) {
+          dropFromHand(playerTwo.heldLeftProp, playerTwo, 'left')
+        }
+      }
+      if (key === 't' || code === 'KeyT') {
+        if (playerTwo.heldRightProp) {
+          openCan(playerTwo.heldRightProp)
+        }
+        if (playerTwo.heldLeftProp) {
+          openCan(playerTwo.heldLeftProp)
+        }
       }
     }
   }
