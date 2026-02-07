@@ -61,6 +61,9 @@ const createHero = ({
   const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
   body.position.y = 0.25
 
+  const headGroup = new THREE.Group()
+  headGroup.position.y = 0.62
+
   const headGeometry = new THREE.SphereGeometry(0.16, 24, 16)
   const headMaterial = new THREE.MeshStandardMaterial({
     color: 0xffd7b3,
@@ -68,8 +71,11 @@ const createHero = ({
     metalness: 0,
   })
   const head = new THREE.Mesh(headGeometry, headMaterial)
-  head.position.y = 0.62
-  hero.add(body, head)
+  head.position.set(0, 0, 0)
+  headGroup.add(head)
+
+  hero.add(body, headGroup)
+  hero.userData.head = headGroup
 
   const limbMaterial = new THREE.MeshStandardMaterial({
     color: 0xffd7b3,
@@ -130,8 +136,8 @@ const createHero = ({
     const eyeGeometry = new THREE.SphereGeometry(0.025, 12, 10)
     const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
     const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
-    leftEye.position.set(-0.05, 0.64, 0.14)
-    rightEye.position.set(0.05, 0.64, 0.14)
+    leftEye.position.set(-0.05, 0.02, 0.14)
+    rightEye.position.set(0.05, 0.02, 0.14)
 
     const lipGeometry = new THREE.CapsuleGeometry(0.03, 0.02, 4, 8)
     const lipMaterial = new THREE.MeshStandardMaterial({
@@ -139,10 +145,10 @@ const createHero = ({
       roughness: 0.6,
     })
     const lips = new THREE.Mesh(lipGeometry, lipMaterial)
-    lips.position.set(0, 0.58, 0.13)
+    lips.position.set(0, -0.04, 0.13)
     lips.rotation.x = Math.PI / 2
 
-    hero.add(leftEye, rightEye, lips)
+    headGroup.add(leftEye, rightEye, lips)
   }
 
   if (style === 'female') {
@@ -162,22 +168,22 @@ const createHero = ({
     })
     const hairTopGeometry = new THREE.SphereGeometry(0.185, 22, 16)
     const hairTop = new THREE.Mesh(hairTopGeometry, hairMaterial)
-    hairTop.position.set(0, 0.69, -0.02)
+    hairTop.position.set(0, 0.07, -0.02)
     hairTop.scale.set(1.02, 0.86, 1.02)
 
     const hairCapGeometry = new THREE.SphereGeometry(0.175, 20, 14)
     const hairCap = new THREE.Mesh(hairCapGeometry, hairMaterial)
-    hairCap.position.set(0, 0.665, -0.02)
+    hairCap.position.set(0, 0.045, -0.02)
     hairCap.scale.set(0.98, 0.76, 0.98)
 
     const hairBackGeometry = new THREE.CylinderGeometry(0.14, 0.18, 0.34, 18)
     const hairBack = new THREE.Mesh(hairBackGeometry, hairMaterial)
-    hairBack.position.set(0, 0.5, -0.07)
+    hairBack.position.set(0, -0.12, -0.07)
     hairBack.rotation.x = Math.PI * 0.08
 
     const hairSideGeometry = new THREE.CylinderGeometry(0.07, 0.09, 0.22, 12)
     const hairSideLeft = new THREE.Mesh(hairSideGeometry, hairMaterial)
-    hairSideLeft.position.set(-0.16, 0.56, 0.02)
+    hairSideLeft.position.set(-0.16, -0.06, 0.02)
     hairSideLeft.rotation.z = Math.PI * 0.08
     hairSideLeft.rotation.x = Math.PI * 0.12
 
@@ -187,7 +193,7 @@ const createHero = ({
 
     const bangsGeometry = new THREE.BoxGeometry(0.18, 0.03, 0.03)
     const bangs = new THREE.Mesh(bangsGeometry, hairMaterial)
-    bangs.position.set(0, 0.78, 0.04)
+    bangs.position.set(0, 0.16, 0.04)
     bangs.rotation.x = -Math.PI * 0.07
 
     addFace(eyeColor ?? 0x2f9b4f, lipColor ?? 0xd96b7a)
@@ -199,11 +205,10 @@ const createHero = ({
     })
     const leftEarring = new THREE.Mesh(earringGeometry, earringMaterial)
     const rightEarring = new THREE.Mesh(earringGeometry, earringMaterial)
-    leftEarring.position.set(-0.13, 0.61, 0.02)
-    rightEarring.position.set(0.13, 0.61, 0.02)
+    leftEarring.position.set(-0.13, -0.01, 0.02)
+    rightEarring.position.set(0.13, -0.01, 0.02)
 
-    hero.add(
-      dress,
+    headGroup.add(
       hairTop,
       hairCap,
       hairBack,
@@ -213,6 +218,7 @@ const createHero = ({
       leftEarring,
       rightEarring
     )
+    hero.add(dress)
   } else {
     const hatGeometry = new THREE.CylinderGeometry(0.12, 0.14, 0.08, 20)
     const hatMaterial = new THREE.MeshStandardMaterial({
@@ -220,8 +226,8 @@ const createHero = ({
       roughness: 0.7,
     })
     const hat = new THREE.Mesh(hatGeometry, hatMaterial)
-    hat.position.y = 0.74
-    hero.add(hat)
+    hat.position.y = 0.12
+    headGroup.add(hat)
     const sleeveGeometry = new THREE.CylinderGeometry(0.085, 0.095, 0.14, 12)
     const sleeveMaterial = new THREE.MeshStandardMaterial({
       color: bodyColor ?? 0x2c5cff,
@@ -404,6 +410,10 @@ const kissState = {
   timer: 0,
   duration: 1.6,
   cooldown: 0,
+  startA: new THREE.Vector3(),
+  startB: new THREE.Vector3(),
+  targetA: new THREE.Vector3(),
+  targetB: new THREE.Vector3(),
 }
 
 const hasAny = (list) => list.some((key) => keys.has(key))
@@ -507,6 +517,19 @@ const animate = () => {
     kissState.active = true
     kissState.timer = 0
     kissState.cooldown = kissState.duration + 0.4
+    kissState.startA.copy(hero.position)
+    kissState.startB.copy(heroTwo.position)
+    heroMidpoint.copy(hero.position).add(heroTwo.position).multiplyScalar(0.5)
+    tmpVec.copy(heroTwo.position).sub(hero.position)
+    tmpVec.y = 0
+    if (tmpVec.lengthSq() < 0.0001) {
+      tmpVec.set(1, 0, 0)
+    } else {
+      tmpVec.normalize()
+    }
+    const desiredDistance = 0.32
+    kissState.targetA.copy(heroMidpoint).addScaledVector(tmpVec, -desiredDistance * 0.5)
+    kissState.targetB.copy(heroMidpoint).addScaledVector(tmpVec, desiredDistance * 0.5)
   }
   kissRequested = false
 
@@ -521,8 +544,35 @@ const animate = () => {
       { forward: [], backward: [], left: [], right: [] },
       delta
     )
+    kissState.timer += delta
+    const t = Math.min(kissState.timer / kissState.duration, 1)
+    let blend = 1
+    if (t < 0.4) {
+      blend = t / 0.4
+    } else if (t > 0.6) {
+      blend = 1 - (t - 0.6) / 0.4
+    }
+    hero.position.lerpVectors(kissState.startA, kissState.targetA, blend)
+    heroTwo.position.lerpVectors(kissState.startB, kissState.targetB, blend)
+    hero.position.y = getGroundHeightAt(hero.position.x, hero.position.z)
+    heroTwo.position.y = getGroundHeightAt(heroTwo.position.x, heroTwo.position.z)
     hero.lookAt(heroTwo.position.x, hero.position.y, heroTwo.position.z)
     heroTwo.lookAt(hero.position.x, heroTwo.position.y, hero.position.z)
+    if (hero.userData?.head && heroTwo.userData?.head) {
+      const headTilt = Math.min(heroDistance * 0.6, 0.2)
+      hero.userData.head.rotation.x = headTilt
+      heroTwo.userData.head.rotation.x = -headTilt
+    }
+    if (hero.userData?.limbs) {
+      const hugT = Math.min(kissState.timer / 0.5, 1)
+      const hugEase = hugT * hugT * (3 - 2 * hugT)
+      const hugX = -0.9 * hugEase
+      const hugZ = 0.35 * hugEase
+      hero.userData.limbs.leftArm.userData.hugX = hugX
+      hero.userData.limbs.rightArm.userData.hugX = hugX
+      hero.userData.limbs.leftArm.userData.hugZ = hugZ
+      hero.userData.limbs.rightArm.userData.hugZ = -hugZ
+    }
   } else {
     updateHero(
       hero,
@@ -557,7 +607,6 @@ const animate = () => {
 
   if (kissHeart) {
     if (kissState.active) {
-      kissState.timer += delta
       const t = Math.min(kissState.timer / kissState.duration, 1)
       const pop = t < 0.3 ? t / 0.3 : 1
       const fade = t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1
@@ -568,7 +617,7 @@ const animate = () => {
         heroMidpoint.y + 0.9 + t * 0.25 + Math.sin(time * 6) * 0.03,
         heroMidpoint.z
       )
-      kissHeart.scale.setScalar(0.35 + pop * 0.35)
+      kissHeart.scale.setScalar(0.22 + pop * 0.22)
       kissHeart.rotation.y = Math.PI + Math.sin(time * 2) * 0.15
       kissHeart.material.opacity = Math.max(0, fade)
       if (t >= 1) {
@@ -589,6 +638,21 @@ const animate = () => {
       heroDistance < 0.8 &&
       areFacingEachOther()
     kissHint.style.display = showHint ? 'block' : 'none'
+  }
+
+  if (!kissState.active) {
+    if (hero.userData?.head) {
+      hero.userData.head.rotation.x = 0
+    }
+    if (heroTwo.userData?.head) {
+      heroTwo.userData.head.rotation.x = 0
+    }
+    if (hero.userData?.limbs) {
+      hero.userData.limbs.leftArm.userData.hugX = 0
+      hero.userData.limbs.rightArm.userData.hugX = 0
+      hero.userData.limbs.leftArm.userData.hugZ = 0
+      hero.userData.limbs.rightArm.userData.hugZ = 0
+    }
   }
 
   controls.update()

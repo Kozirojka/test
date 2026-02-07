@@ -248,6 +248,16 @@ export const createPropSystem = ({
   scaleToHeight(redCan, targetPropHeight)
   scaleToHeight(grayCan, targetPropHeight)
 
+  redCan.userData.pickupLabel = 'Підняти банку червоного рева'
+  redCan.userData.pickupLabelP1 = 'Підняти банку червоного рева (L)'
+  redCan.userData.pickupLabelP2 = 'Підняти банку червоного рева (E/R)'
+  grayCan.userData.pickupLabel = 'Підняти банку сірого рева'
+  grayCan.userData.pickupLabelP1 = 'Підняти банку сірого рева (L)'
+  grayCan.userData.pickupLabelP2 = 'Підняти банку сірого рева (E/R)'
+  heartMesh.userData.pickupLabel = 'Підняти сердечко'
+  heartMesh.userData.pickupLabelP1 = 'Підняти сердечко (L)'
+  heartMesh.userData.pickupLabelP2 = 'Підняти сердечко (E/R)'
+
   placeOnSurface(heartMesh, -0.6, picnicZ + 0.05, propGroundEpsilon)
   placeOnSurface(redCan, 0.5, picnicZ - 0.15, propGroundEpsilon)
   placeOnSurface(grayCan, 0.15, picnicZ - 0.35, propGroundEpsilon)
@@ -409,6 +419,8 @@ export const createPropSystem = ({
       rightArm.position.copy(baseRightPos)
       rightArm.rotation.copy(baseRightRot)
       rightArm.rotation.x += rightArm.userData?.swingX ?? 0
+      rightArm.rotation.x += rightArm.userData?.hugX ?? 0
+      rightArm.rotation.z += rightArm.userData?.hugZ ?? 0
       if (playerState.heldRightProp) {
         rightArm.position.z += armExtend.z
         rightArm.rotation.x += armExtend.xRot
@@ -418,6 +430,8 @@ export const createPropSystem = ({
       leftArm.position.copy(baseLeftPos)
       leftArm.rotation.copy(baseLeftRot)
       leftArm.rotation.x += leftArm.userData?.swingX ?? 0
+      leftArm.rotation.x += leftArm.userData?.hugX ?? 0
+      leftArm.rotation.z += leftArm.userData?.hugZ ?? 0
       if (playerState.heldLeftProp) {
         leftArm.position.z += armExtend.z
         leftArm.rotation.x += armExtend.xRot
@@ -526,7 +540,7 @@ export const createPropSystem = ({
     return nearest
   }
 
-  const updateHintForPlayer = (playerState, hint, projector) => {
+  const updateHintForPlayer = (playerState, hint, projector, labelKey) => {
     if (!playerState || !hint) return
     if (playerState.heldLeftProp && playerState.heldRightProp) {
       hint.style.display = 'none'
@@ -543,6 +557,10 @@ export const createPropSystem = ({
       projector.project(camera)
       const screenX = (projector.x * 0.5 + 0.5) * rect.width + rect.left
       const screenY = (-projector.y * 0.5 + 0.5) * rect.height + rect.top
+      hint.textContent =
+        prop.mesh.userData?.[labelKey] ??
+        prop.mesh.userData?.pickupLabel ??
+        hint.textContent
       hint.style.left = `${screenX}px`
       hint.style.top = `${screenY}px`
       hint.style.display = 'block'
@@ -562,9 +580,14 @@ export const createPropSystem = ({
     )
 
   const updateActionHint = () => {
-    updateHintForPlayer(playerOne, actionHint, actionProject)
+    updateHintForPlayer(playerOne, actionHint, actionProject, 'pickupLabelP1')
     if (playerTwo && actionHintTwo) {
-      updateHintForPlayer(playerTwo, actionHintTwo, actionProjectTwo)
+      updateHintForPlayer(
+        playerTwo,
+        actionHintTwo,
+        actionProjectTwo,
+        'pickupLabelP2'
+      )
     }
     openHint.style.display =
       hasClosedCan(playerOne) || hasClosedCan(playerTwo) ? 'block' : 'none'
