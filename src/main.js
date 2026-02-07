@@ -194,6 +194,7 @@ const createShore = () => {
   const water = new THREE.Mesh(waterGeometry, waterMaterial)
   water.rotation.x = -Math.PI / 2
   water.position.set(0, -0.22, shoreZ - waterDepth / 2 + 0.8)
+  const waterCenter = new THREE.Vector2(water.position.x, water.position.z)
 
   const waterWireMaterial = new THREE.MeshBasicMaterial({
     color: 0x9ad8ff,
@@ -223,11 +224,23 @@ const createShore = () => {
     bounds,
     shoreZ,
     water,
+    waterWidth,
+    waterDepth,
+    waterCenter,
   }
 }
 
-const { group: shore, ground, getGroundHeightAt, bounds, shoreZ, water } =
-  createShore()
+const {
+  group: shore,
+  ground,
+  getGroundHeightAt,
+  bounds,
+  shoreZ,
+  water,
+  waterWidth,
+  waterDepth,
+  waterCenter,
+} = createShore()
 scene.add(shore)
 
 const placeOnGround = (object, x, z, lift = 0) => {
@@ -464,19 +477,17 @@ const createSwan = (bodyColor) => {
 }
 
 const waterSwans = []
-const addSwan = (color, offset, radius, speed) => {
+const addSwan = (color, id) => {
   const swan = createSwan(color)
   swan.userData = {
-    offset,
-    radius,
-    speed,
+    id,
   }
   waterSwans.push(swan)
   scene.add(swan)
 }
 
-addSwan(0xffffff, 0, 0.9, 0.25)
-addSwan(0x1a1a1a, Math.PI, 0.7, -0.2)
+addSwan(0xffffff, 0)
+addSwan(0x1a1a1a, 1)
 
 const surfaceRaycaster = new THREE.Raycaster()
 const surfaceOrigin = new THREE.Vector3()
@@ -490,6 +501,66 @@ const getSurfaceHeightAt = (x, z) => {
     height = Math.max(height, hit.point.y)
   }
   return height
+}
+
+const waterWaveAt = (localX, localY, time) =>
+  Math.sin(localX * 1.2 + time * 1.6) * 0.07 +
+  Math.cos(localY * 1.1 + time * 1.3) * 0.05 +
+  Math.sin((localX + localY) * 0.6 + time * 0.9) * 0.03
+
+const lerp = (a, b, t) => a + (b - a) * t
+const smoothstep = (t) => t * t * (3 - 2 * t)
+
+const heartDuration = 18
+const hugDuration = 10
+const separateDuration = 14
+const storySpeed = 1
+const storyTotal = heartDuration + hugDuration + separateDuration
+const minWaterSize = Math.min(waterWidth, waterDepth)
+const heartScale = 0.18 * minWaterSize
+const hugRadius = 0.22 * minWaterSize
+const separateRadius = 0.35 * minWaterSize
+let swanStoryTime = 0
+
+const getSwanCurvePosition = (time, swanId) => {
+  const t = (time * storySpeed) % storyTotal
+  const phaseOffset = swanId === 0 ? 0 : 1
+
+  if (t < heartDuration) {
+    const phaseT = t / heartDuration
+    const baseT = phaseT * Math.PI * 2
+    const offset = lerp(Math.PI, 0, smoothstep(phaseT))
+    const swanT = baseT + (phaseOffset ? offset : 0)
+    const sinT = Math.sin(swanT)
+    const cosT = Math.cos(swanT)
+    const x = 16 * sinT * sinT * sinT
+    const y =
+      13 * cosT - 5 * Math.cos(2 * swanT) - 2 * Math.cos(3 * swanT) - Math.cos(4 * swanT)
+    return {
+      x: x * heartScale,
+      z: y * heartScale * 0.8,
+    }
+  }
+
+  if (t < heartDuration + hugDuration) {
+    const phaseT = (t - heartDuration) / hugDuration
+    const angle = phaseT * Math.PI * 2
+    const offset = 0.6
+    const swanAngle = angle + (phaseOffset ? offset : 0)
+    return {
+      x: Math.cos(swanAngle) * hugRadius,
+      z: Math.sin(swanAngle) * hugRadius,
+    }
+  }
+
+  const phaseT = (t - heartDuration - hugDuration) / separateDuration
+  const angle = phaseT * Math.PI * 2
+  const offset = lerp(0.6, Math.PI, smoothstep(phaseT))
+  const swanAngle = angle + (phaseOffset ? offset : 0)
+  return {
+    x: Math.cos(swanAngle) * separateRadius,
+    z: Math.sin(swanAngle) * separateRadius,
+  }
 }
 
 const createForest = () => {
@@ -821,24 +892,34 @@ const animate = () => {
   for (let i = 0; i < waterPositions.count; i += 1) {
     const x = waterPositions.getX(i)
     const y = waterPositions.getY(i)
-    const wave =
-      Math.sin(x * 1.2 + time * 1.6) * 0.07 +
-      Math.cos(y * 1.1 + time * 1.3) * 0.05 +
-      Math.sin((x + y) * 0.6 + time * 0.9) * 0.03
+    const wave = waterWaveAt(x, y, time)
     waterPositions.setZ(i, wave)
   }
   waterPositions.needsUpdate = true
   water.geometry.computeVertexNormals()
 
+  const swanTime = swanStoryTime
   for (const swan of waterSwans) {
-    const { offset, radius, speed } = swan.userData
-    const angle = time * speed + offset
-    const wx = water.position.x + Math.cos(angle) * radius
-    const wz = water.position.z + Math.sin(angle) * radius
-    swan.position.set(wx, waterBaseY + 0.06, wz)
-    swan.rotation.y = -angle + Math.PI / 2
-    swan.position.y += Math.sin(time * 2 + offset) * 0.01
+    const { id } = swan.userData
+    const pos = getSwanCurvePosition(swanTime, id)
+    const worldX = waterCenter.x + pos.x
+    const worldZ = waterCenter.y + pos.z
+
+    const localX = worldX - waterCenter.x
+    const localY = -(worldZ - waterCenter.y)
+    const waveHeight = waterWaveAt(localX, localY, time)
+    const bob = Math.sin(swanTime * 2 + id) * 0.01
+    swan.position.set(worldX, water.position.y + waveHeight + 0.06 + bob, worldZ)
+
+    const ahead = getSwanCurvePosition(swanTime + 0.03, id)
+    const aheadX = waterCenter.x + ahead.x
+    const aheadZ = waterCenter.y + ahead.z
+    const dirX = aheadX - worldX
+    const dirZ = aheadZ - worldZ
+    swan.rotation.y = Math.atan2(dirX, dirZ)
+    swan.rotation.z = Math.sin(swanTime * 1.3 + id) * 0.02
   }
+  swanStoryTime += delta
 
   for (const prop of props) {
     if (prop.held) continue
