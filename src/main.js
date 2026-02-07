@@ -71,6 +71,56 @@ const createHero = ({
   head.position.y = 0.62
   hero.add(body, head)
 
+  const limbMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffd7b3,
+    roughness: 0.6,
+    metalness: 0,
+  })
+  const armGeometry = new THREE.CylinderGeometry(
+    0.045 * slimFactor,
+    0.055 * slimFactor,
+    0.32,
+    12
+  )
+  const leftArmGroup = new THREE.Group()
+  const rightArmGroup = new THREE.Group()
+  const leftArm = new THREE.Mesh(armGeometry, limbMaterial)
+  const rightArm = new THREE.Mesh(armGeometry, limbMaterial)
+  leftArm.position.y = -0.16
+  rightArm.position.y = -0.16
+  leftArmGroup.add(leftArm)
+  rightArmGroup.add(rightArm)
+  leftArmGroup.position.set(-0.23 * slimFactor, 0.46, 0)
+  rightArmGroup.position.set(0.23 * slimFactor, 0.46, 0)
+  leftArmGroup.rotation.z = Math.PI * 0.08
+  rightArmGroup.rotation.z = -Math.PI * 0.08
+
+  const legGeometry = new THREE.CylinderGeometry(
+    0.06 * slimFactor,
+    0.07 * slimFactor,
+    0.38,
+    12
+  )
+  const leftLegGroup = new THREE.Group()
+  const rightLegGroup = new THREE.Group()
+  const leftLeg = new THREE.Mesh(legGeometry, limbMaterial)
+  const rightLeg = new THREE.Mesh(legGeometry, limbMaterial)
+  leftLeg.position.y = -0.19
+  rightLeg.position.y = -0.19
+  leftLegGroup.add(leftLeg)
+  rightLegGroup.add(rightLeg)
+  leftLegGroup.position.set(-0.09 * slimFactor, 0.19, 0)
+  rightLegGroup.position.set(0.09 * slimFactor, 0.19, 0)
+
+  hero.add(leftArmGroup, rightArmGroup, leftLegGroup, rightLegGroup)
+
+  hero.userData.limbs = {
+    leftArm: leftArmGroup,
+    rightArm: rightArmGroup,
+    leftLeg: leftLegGroup,
+    rightLeg: rightLegGroup,
+  }
+
   const addFace = (eyeColorValue, lipColorValue) => {
     const eyeMaterial = new THREE.MeshStandardMaterial({
       color: eyeColorValue,
@@ -172,6 +222,18 @@ const createHero = ({
     const hat = new THREE.Mesh(hatGeometry, hatMaterial)
     hat.position.y = 0.74
     hero.add(hat)
+    const sleeveGeometry = new THREE.CylinderGeometry(0.085, 0.095, 0.14, 12)
+    const sleeveMaterial = new THREE.MeshStandardMaterial({
+      color: bodyColor ?? 0x2c5cff,
+      roughness: 0.6,
+      metalness: 0.05,
+    })
+    const leftSleeve = new THREE.Mesh(sleeveGeometry, sleeveMaterial)
+    const rightSleeve = new THREE.Mesh(sleeveGeometry, sleeveMaterial)
+    leftSleeve.position.set(0, -0.03, 0)
+    rightSleeve.position.set(0, -0.03, 0)
+    leftArmGroup.add(leftSleeve)
+    rightArmGroup.add(rightSleeve)
     addFace(eyeColor ?? 0x0a0a0a, lipColor ?? 0xd96b7a)
   }
 
@@ -290,7 +352,8 @@ const updateHero = (heroTarget, input, delta) => {
     move.add(right)
   }
 
-  if (move.lengthSq() > 0) {
+  const moveAmount = move.lengthSq()
+  if (moveAmount > 0) {
     move.normalize().multiplyScalar(heroSpeed * delta)
     heroTarget.position.add(move)
 
@@ -313,6 +376,17 @@ const updateHero = (heroTarget, input, delta) => {
     targetQuat.setFromAxisAngle(worldUp, targetAngle)
     const turnAlpha = 1 - Math.exp(-heroTurnSpeed * delta)
     heroTarget.quaternion.slerp(targetQuat, turnAlpha)
+  }
+
+  const limbTargets = heroTarget.userData?.limbs
+  if (limbTargets) {
+    const swing = moveAmount > 0 ? Math.sin(performance.now() * 0.006) * 0.45 : 0
+    limbTargets.leftArm.rotation.x = swing
+    limbTargets.rightArm.rotation.x = -swing
+    limbTargets.leftLeg.rotation.x = -swing
+    limbTargets.rightLeg.rotation.x = swing
+    limbTargets.leftArm.userData.swingX = swing
+    limbTargets.rightArm.userData.swingX = -swing
   }
 }
 

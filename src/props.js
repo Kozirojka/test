@@ -26,7 +26,7 @@ const createHeartMesh = () => {
 
   const mesh = new THREE.Mesh(geometry, material)
   mesh.scale.set(0.7, 0.7, 0.7)
-  mesh.rotation.set(Math.PI / 2, Math.PI * 0.15, -Math.PI * 0.05)
+  mesh.rotation.set(-Math.PI / 2, Math.PI * 0.15, -Math.PI * 0.05)
   return mesh
 }
 
@@ -146,6 +146,7 @@ const createCanGroup = (variant) => {
   group.userData.canHeight = height
   group.userData.tab = tab
   group.userData.lid = lid
+  group.userData.labelYaw = Math.PI / 2
   return group
 }
 
@@ -286,13 +287,32 @@ export const createPropSystem = ({
   const createHandState = (player, rightOffset, leftOffset) => {
     const holdRight = new THREE.Object3D()
     const holdLeft = new THREE.Object3D()
-    holdRight.position.copy(rightOffset)
-    holdLeft.position.copy(leftOffset)
-    player.add(holdRight, holdLeft)
+    const rightArm = player.userData?.limbs?.rightArm
+    const leftArm = player.userData?.limbs?.leftArm
+    const baseRightPos = rightArm ? rightArm.position.clone() : null
+    const baseLeftPos = leftArm ? leftArm.position.clone() : null
+    const baseRightRot = rightArm ? rightArm.rotation.clone() : null
+    const baseLeftRot = leftArm ? leftArm.rotation.clone() : null
+    if (rightArm && leftArm) {
+      holdRight.position.set(0, -0.3, 0.14)
+      holdLeft.position.set(0, -0.3, 0.14)
+      rightArm.add(holdRight)
+      leftArm.add(holdLeft)
+    } else {
+      holdRight.position.copy(rightOffset)
+      holdLeft.position.copy(leftOffset)
+      player.add(holdRight, holdLeft)
+    }
     return {
       player,
       holdRight,
       holdLeft,
+      rightArm,
+      leftArm,
+      baseRightPos,
+      baseLeftPos,
+      baseRightRot,
+      baseLeftRot,
       heldRightProp: null,
       heldLeftProp: null,
       activeProp: null,
@@ -301,14 +321,14 @@ export const createPropSystem = ({
 
   const playerOne = createHandState(
     hero,
-    new THREE.Vector3(0.28, 0.38, 0.22),
-    new THREE.Vector3(-0.28, 0.38, 0.22)
+    new THREE.Vector3(0.21, 0.18, 0.16),
+    new THREE.Vector3(-0.21, 0.18, 0.16)
   )
   const playerTwo = heroTwo
     ? createHandState(
         heroTwo,
-        new THREE.Vector3(0.28, 0.38, 0.22),
-        new THREE.Vector3(-0.28, 0.38, 0.22)
+        new THREE.Vector3(0.21, 0.18, 0.16),
+        new THREE.Vector3(-0.21, 0.18, 0.16)
       )
     : null
 
@@ -376,6 +396,34 @@ export const createPropSystem = ({
   const propAngularDamp = 0.92
   const dropRightDir = new THREE.Vector3()
   const dropForwardDir = new THREE.Vector3()
+  const armExtend = {
+    z: 0.08,
+    xRot: -0.18,
+  }
+
+  const updateArmPose = (playerState) => {
+    if (!playerState) return
+    const { rightArm, leftArm, baseRightPos, baseLeftPos, baseRightRot, baseLeftRot } =
+      playerState
+    if (rightArm && baseRightPos && baseRightRot) {
+      rightArm.position.copy(baseRightPos)
+      rightArm.rotation.copy(baseRightRot)
+      rightArm.rotation.x += rightArm.userData?.swingX ?? 0
+      if (playerState.heldRightProp) {
+        rightArm.position.z += armExtend.z
+        rightArm.rotation.x += armExtend.xRot
+      }
+    }
+    if (leftArm && baseLeftPos && baseLeftRot) {
+      leftArm.position.copy(baseLeftPos)
+      leftArm.rotation.copy(baseLeftRot)
+      leftArm.rotation.x += leftArm.userData?.swingX ?? 0
+      if (playerState.heldLeftProp) {
+        leftArm.position.z += armExtend.z
+        leftArm.rotation.x += armExtend.xRot
+      }
+    }
+  }
 
   const applyHeroImpulse = (prop, heroRef) => {
     if (!heroRef) return
@@ -455,6 +503,10 @@ export const createPropSystem = ({
       prop.mesh.rotation.z += prop.angular.z * delta
     }
     updateOpenEffects(delta)
+    updateArmPose(playerOne)
+    if (playerTwo) {
+      updateArmPose(playerTwo)
+    }
   }
 
   const findNearestPropFor = (heroRef) => {
@@ -523,7 +575,11 @@ export const createPropSystem = ({
     prop.velocity.set(0, 0, 0)
     prop.angular.set(0, 0, 0)
     prop.mesh.position.set(0, 0, 0)
-    prop.mesh.rotation.set(0, 0, 0)
+    if (prop.isCan) {
+      prop.mesh.rotation.set(0, prop.mesh.userData?.labelYaw ?? Math.PI / 2, 0)
+    } else {
+      prop.mesh.rotation.set(Math.PI / 2, 0, 0)
+    }
     if (hand === 'right') {
       playerState.holdRight.add(prop.mesh)
       playerState.heldRightProp = prop
