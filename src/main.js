@@ -222,6 +222,14 @@ const placeOnGround = (object, x, z, lift = 0) => {
   object.position.y += groundY - box.min.y
 }
 
+const placeOnSurface = (object, x, z, lift = 0) => {
+  object.position.set(x, 0, z)
+  object.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(object)
+  const surfaceY = getSurfaceHeightAt(x, z) + lift
+  object.position.y += surfaceY - box.min.y
+}
+
 const createFloralTexture = () => {
   const size = 256
   const canvas = document.createElement('canvas')
@@ -342,6 +350,7 @@ const scaleToHeight = (object, targetHeight) => {
   object.scale.multiplyScalar(factor)
 }
 
+const propGroundEpsilon = 0.02
 const picnicZ = shoreZ + 0.8
 
 const heartMesh = createHeartMesh()
@@ -404,6 +413,20 @@ for (let i = 0; i < blanketTopCount; i += 1) {
 const blanketDisplacements = new Float32Array(blanketTopCount)
 
 scene.add(blanket)
+
+const surfaceRaycaster = new THREE.Raycaster()
+const surfaceOrigin = new THREE.Vector3()
+const surfaceDown = new THREE.Vector3(0, -1, 0)
+const getSurfaceHeightAt = (x, z) => {
+  let height = getGroundHeightAt(x, z)
+  surfaceOrigin.set(x, height + 2, z)
+  surfaceRaycaster.set(surfaceOrigin, surfaceDown)
+  const hit = surfaceRaycaster.intersectObject(blanket, false)[0]
+  if (hit) {
+    height = Math.max(height, hit.point.y)
+  }
+  return height
+}
 
 const createForest = () => {
   const group = new THREE.Group()
@@ -553,6 +576,10 @@ const heroStartZ = picnicZ + 0.9
 hero.position.set(0, getGroundHeightAt(0, heroStartZ), heroStartZ)
 scene.add(hero)
 
+const holdAnchor = new THREE.Object3D()
+holdAnchor.position.set(0.28, 0.38, 0.22)
+hero.add(holdAnchor)
+
 const heroBounds = new THREE.Box3().setFromObject(hero)
 const heroSize = new THREE.Vector3()
 heroBounds.getSize(heroSize)
@@ -561,8 +588,8 @@ const targetPropHeight = heroSize.y / 5
 scaleToHeight(heartMesh, targetPropHeight)
 scaleToHeight(bottleGroup, targetPropHeight)
 
-placeOnGround(heartMesh, -0.6, picnicZ + 0.05)
-placeOnGround(bottleGroup, 0.5, picnicZ - 0.15)
+placeOnSurface(heartMesh, -0.6, picnicZ + 0.05, propGroundEpsilon)
+placeOnSurface(bottleGroup, 0.5, picnicZ - 0.15, propGroundEpsilon)
 scene.add(heartMesh, bottleGroup)
 
 const heroRadius = 0.5 * Math.max(heroSize.x, heroSize.z)
@@ -575,19 +602,83 @@ const createPropBody = (mesh) => {
     velocity: new THREE.Vector3(),
     angular: new THREE.Vector3(),
     radius: 0.5 * Math.max(size.x, size.z),
-    halfHeight: size.y / 2,
+    halfHeight: size.y / 2 + propGroundEpsilon,
     cooldown: 0,
+    held: false,
   }
 }
 
 const props = [createPropBody(heartMesh), createPropBody(bottleGroup)]
 
+const actionHint = document.createElement('div')
+actionHint.textContent = '1. Підняти Press L'
+actionHint.style.position = 'fixed'
+actionHint.style.left = '0'
+actionHint.style.top = '0'
+actionHint.style.transform = 'translate(-50%, -120%)'
+actionHint.style.padding = '6px 10px'
+actionHint.style.borderRadius = '8px'
+actionHint.style.background = 'rgba(16, 18, 24, 0.85)'
+actionHint.style.color = '#f7e9ef'
+actionHint.style.fontSize = '13px'
+actionHint.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+actionHint.style.letterSpacing = '0.2px'
+actionHint.style.pointerEvents = 'none'
+actionHint.style.whiteSpace = 'nowrap'
+actionHint.style.display = 'none'
+actionHint.style.boxShadow = '0 8px 18px rgba(0,0,0,0.25)'
+document.body.appendChild(actionHint)
+
+let activeProp = null
+let heldProp = null
+const actionProject = new THREE.Vector3()
+
 const keys = new Set()
 const onKeyDown = (event) => {
-  keys.add(event.key.toLowerCase())
+  const key = event.key.toLowerCase()
+  const code = event.code
+  keys.add(key)
+  if (code) {
+    keys.add(code)
+  }
+  if ((key === 'l' || code === 'KeyL') && activeProp && !heldProp) {
+    heldProp = activeProp
+    heldProp.held = true
+    heldProp.velocity.set(0, 0, 0)
+    heldProp.angular.set(0, 0, 0)
+    heldProp.mesh.position.set(0, 0, 0)
+    heldProp.mesh.rotation.set(0, 0, 0)
+    holdAnchor.add(heldProp.mesh)
+    activeProp = null
+    actionHint.style.display = 'none'
+  }
+  if ((key === 'k' || code === 'KeyK') && heldProp) {
+    const dropDir = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      hero.quaternion
+    )
+    const dropX = hero.position.x + dropDir.x * 0.6
+    const dropZ = hero.position.z + dropDir.z * 0.6
+
+    holdAnchor.remove(heldProp.mesh)
+    scene.add(heldProp.mesh)
+    placeOnSurface(heldProp.mesh, dropX, dropZ, propGroundEpsilon)
+    heldProp.velocity.set(dropDir.x * 0.2, 0.2, dropDir.z * 0.2)
+    heldProp.angular.set(
+      (Math.random() - 0.5) * 1.2,
+      (Math.random() - 0.5) * 1.2,
+      (Math.random() - 0.5) * 1.2
+    )
+    heldProp.held = false
+    heldProp.cooldown = 0.5
+    heldProp = null
+  }
 }
 const onKeyUp = (event) => {
-  keys.delete(event.key.toLowerCase())
+  const key = event.key.toLowerCase()
+  keys.delete(key)
+  if (event.code) {
+    keys.delete(event.code)
+  }
 }
 window.addEventListener('keydown', onKeyDown)
 window.addEventListener('keyup', onKeyUp)
@@ -618,10 +709,18 @@ const animate = () => {
   const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize()
 
   const move = new THREE.Vector3()
-  if (keys.has('w') || keys.has('arrowup')) move.add(forward)
-  if (keys.has('s') || keys.has('arrowdown')) move.sub(forward)
-  if (keys.has('a') || keys.has('arrowleft')) move.sub(right)
-  if (keys.has('d') || keys.has('arrowright')) move.add(right)
+  if (keys.has('w') || keys.has('KeyW') || keys.has('arrowup')) {
+    move.add(forward)
+  }
+  if (keys.has('s') || keys.has('KeyS') || keys.has('arrowdown')) {
+    move.sub(forward)
+  }
+  if (keys.has('a') || keys.has('KeyA') || keys.has('arrowleft')) {
+    move.sub(right)
+  }
+  if (keys.has('d') || keys.has('KeyD') || keys.has('arrowright')) {
+    move.add(right)
+  }
 
   if (move.lengthSq() > 0) {
     move.normalize().multiplyScalar(heroSpeed * delta)
@@ -644,6 +743,7 @@ const animate = () => {
   }
 
   for (const prop of props) {
+    if (prop.held) continue
     if (prop.cooldown > 0) {
       prop.cooldown = Math.max(0, prop.cooldown - delta)
     }
@@ -668,7 +768,7 @@ const animate = () => {
     }
 
     const floorY =
-      getGroundHeightAt(prop.mesh.position.x, prop.mesh.position.z) +
+      getSurfaceHeightAt(prop.mesh.position.x, prop.mesh.position.z) +
       prop.halfHeight
     if (prop.mesh.position.y < floorY) {
       prop.mesh.position.y = floorY
@@ -709,6 +809,38 @@ const animate = () => {
     prop.mesh.rotation.x += prop.angular.x * delta
     prop.mesh.rotation.y += prop.angular.y * delta
     prop.mesh.rotation.z += prop.angular.z * delta
+  }
+
+  if (!heldProp) {
+    activeProp = null
+    let nearestDist = Infinity
+    for (const prop of props) {
+      if (prop.held) continue
+      const dx = prop.mesh.position.x - hero.position.x
+      const dz = prop.mesh.position.z - hero.position.z
+      const dist = Math.hypot(dx, dz)
+      const range = heroRadius + prop.radius + 0.2
+      if (dist < range && dist < nearestDist) {
+        nearestDist = dist
+        activeProp = prop
+      }
+    }
+
+    if (activeProp) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      actionProject.copy(activeProp.mesh.position)
+      actionProject.y += activeProp.halfHeight + 0.05
+      actionProject.project(camera)
+      const screenX = (actionProject.x * 0.5 + 0.5) * rect.width + rect.left
+      const screenY = (-actionProject.y * 0.5 + 0.5) * rect.height + rect.top
+      actionHint.style.left = `${screenX}px`
+      actionHint.style.top = `${screenY}px`
+      actionHint.style.display = 'block'
+    } else {
+      actionHint.style.display = 'none'
+    }
+  } else {
+    actionHint.style.display = 'none'
   }
 
   heroLocal.copy(hero.position)
