@@ -25,6 +25,11 @@ const picnicZ = shoreZ + 0.8
 const { blanket, updateBlanket, getSurfaceHeightAt } = createBlanket({
   picnicZ,
   getGroundHeightAt,
+  fixedPosition: {
+    x: 1.2,
+    y: 0.2346605718,
+    z: -0.3,
+  },
 })
 scene.add(blanket)
 

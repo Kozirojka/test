@@ -111,7 +111,7 @@ const createThickBlanketGeometry = (width, height, segW, segH, thickness) => {
   return geometry
 }
 
-export const createBlanket = ({ picnicZ, getGroundHeightAt }) => {
+export const createBlanket = ({ picnicZ, getGroundHeightAt, fixedPosition }) => {
   const blanketThickness = 0.06
   const blanketGeometry = createThickBlanketGeometry(
     1.8,
@@ -142,7 +142,15 @@ export const createBlanket = ({ picnicZ, getGroundHeightAt }) => {
     object.position.y += groundY - box.min.y
   }
 
-  placeOnGround(blanket, 1.2, picnicZ + 0.7, 0.01)
+  if (fixedPosition) {
+    blanket.position.set(
+      fixedPosition.x,
+      fixedPosition.y,
+      fixedPosition.z
+    )
+  } else {
+    placeOnGround(blanket, 1.2, picnicZ + 0.7, 0.01)
+  }
 
   const conformBlanketToGround = () => {
     blanket.updateMatrixWorld(true)

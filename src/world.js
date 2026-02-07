@@ -1,21 +1,54 @@
 import * as THREE from 'three'
 
+const lerp = (a, b, t) => a + (b - a) * t
+const smoothstep = (edge0, edge1, x) => {
+  const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
 export const createShore = () => {
   const groundWidth = 10
   const groundDepth = 6
   const groundCenterZ = 1.2
   const shoreZ = groundCenterZ - groundDepth / 2
-  const baseHeight = 0.06
-  const slopeFactor = 0.05
 
-  const getGroundHeightAt = (x, z) => {
-    const slope = Math.max(0, z - shoreZ) * slopeFactor
-    const noise =
-      Math.sin(x * 0.35) * Math.cos(z * 0.4) * 0.06 +
-      Math.sin((x + z) * 0.2) * 0.03
-    const height = baseHeight + slope + noise
-    return Math.max(0.02, height)
+  const shoreBand = 1.6
+  const shoreLow = 0.01
+  const landBase = 0.08
+  const noiseAmp = 0.045
+
+  const plateauCenter = new THREE.Vector2(-0.6, shoreZ + 3.1)
+  const plateauInner = 0.9
+  const plateauOuter = 2.2
+  const plateauHeight = 0.35
+
+  const roadHalf = 0.28
+  const roadBlend = 0.24
+
+  const getTerrainSample = (x, z) => {
+    const shoreT = smoothstep(0, shoreBand, z - shoreZ)
+    const baseNoise =
+      Math.sin(x * 0.35) * Math.cos(z * 0.4) * 0.6 +
+      Math.sin((x + z) * 0.2) * 0.4
+
+    const dist = Math.hypot(x - plateauCenter.x, z - plateauCenter.y)
+    const plateauT = 1 - smoothstep(plateauInner, plateauOuter, dist)
+    const noise = baseNoise * noiseAmp * (1 - plateauT * 0.5)
+
+    let height = shoreLow + (landBase + noise) * shoreT
+    height += plateauHeight * plateauT
+
+    const roadBaseZ = plateauCenter.y - 0.2
+    const roadZ = roadBaseZ + Math.sin(x * 0.45) * 0.35
+    const roadDistance = Math.abs(z - roadZ)
+    const roadMask =
+      (1 - smoothstep(roadHalf, roadHalf + roadBlend, roadDistance)) * shoreT
+    height = lerp(height, height - 0.03, roadMask)
+
+    return { height: Math.max(0.01, height), roadMask }
   }
+
+  const getGroundHeightAt = (x, z) => getTerrainSample(x, z).height
 
   const groundGeometry = new THREE.PlaneGeometry(
     groundWidth,
@@ -25,19 +58,32 @@ export const createShore = () => {
   )
   groundGeometry.rotateX(-Math.PI / 2)
   const groundPositions = groundGeometry.attributes.position
+  const groundColors = new Float32Array(groundPositions.count * 3)
+  const grassColor = new THREE.Color(0x6bb86a)
+  const dirtColor = new THREE.Color(0xb38b5b)
+  const mixedColor = new THREE.Color()
   for (let i = 0; i < groundPositions.count; i += 1) {
     const x = groundPositions.getX(i)
     const z = groundPositions.getZ(i) + groundCenterZ
-    const y = getGroundHeightAt(x, z)
+    const { height, roadMask } = getTerrainSample(x, z)
+    const y = height
     groundPositions.setY(i, y)
+
+    mixedColor.copy(grassColor).lerp(dirtColor, roadMask)
+    const c3 = i * 3
+    groundColors[c3] = mixedColor.r
+    groundColors[c3 + 1] = mixedColor.g
+    groundColors[c3 + 2] = mixedColor.b
   }
   groundPositions.needsUpdate = true
+  groundGeometry.setAttribute('color', new THREE.BufferAttribute(groundColors, 3))
   groundGeometry.computeVertexNormals()
 
   const groundMaterial = new THREE.MeshStandardMaterial({
     color: 0x3b7d3f,
     roughness: 0.95,
     metalness: 0,
+    vertexColors: true,
   })
   const ground = new THREE.Mesh(groundGeometry, groundMaterial)
   ground.position.z = groundCenterZ
@@ -77,8 +123,21 @@ export const createShore = () => {
     maxZ: groundCenterZ + groundDepth / 2 - 0.6,
   }
 
+  const reeds = createReeds({
+    bounds,
+    shoreZ,
+    water,
+    waterDepth,
+    getGroundHeightAt,
+  })
+  const roadStones = createRoadStones({
+    bounds,
+    shoreZ,
+    getTerrainSample,
+  })
+
   const group = new THREE.Group()
-  group.add(water, waterWire, ground)
+  group.add(water, waterWire, ground, reeds, roadStones)
   return {
     group,
     ground,
@@ -142,9 +201,6 @@ const createSwan = (bodyColor) => {
   return swan
 }
 
-const lerp = (a, b, t) => a + (b - a) * t
-const smoothstep = (t) => t * t * (3 - 2 * t)
-
 export const createSwanSystem = (
   scene,
   water,
@@ -181,7 +237,7 @@ export const createSwanSystem = (
     if (t < heartDuration) {
       const phaseT = t / heartDuration
       const baseT = phaseT * Math.PI * 2
-      const offset = lerp(Math.PI, 0, smoothstep(phaseT))
+      const offset = lerp(Math.PI, 0, smoothstep(0, 1, phaseT))
       const swanT = baseT + (phaseOffset ? offset : 0)
       const sinT = Math.sin(swanT)
       const cosT = Math.cos(swanT)
@@ -210,7 +266,7 @@ export const createSwanSystem = (
 
     const phaseT = (t - heartDuration - hugDuration) / separateDuration
     const angle = phaseT * Math.PI * 2
-    const offset = lerp(0.6, Math.PI, smoothstep(phaseT))
+    const offset = lerp(0.6, Math.PI, smoothstep(0, 1, phaseT))
     const swanAngle = angle + (phaseOffset ? offset : 0)
     return {
       x: Math.cos(swanAngle) * separateRadius,
@@ -351,5 +407,128 @@ export const createForest = ({ bounds, shoreZ, picnicZ, getGroundHeightAt }) => 
   bushMesh.instanceMatrix.needsUpdate = true
   group.add(bushMesh)
 
+  return group
+}
+
+const createReeds = ({ bounds, shoreZ, water, waterDepth, getGroundHeightAt }) => {
+  const group = new THREE.Group()
+  const reedCount = 90
+
+  const rand = (() => {
+    let seed = 548912
+    return () => {
+      seed |= 0
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  })()
+
+  const randRange = (min, max) => min + (max - min) * rand()
+
+  const stalkGeometry = new THREE.CylinderGeometry(0.01, 0.015, 1, 5)
+  const stalkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x496b3e,
+    roughness: 0.95,
+  })
+  const stalks = new THREE.InstancedMesh(stalkGeometry, stalkMaterial, reedCount)
+
+  const headGeometry = new THREE.SphereGeometry(0.03, 6, 4)
+  const headMaterial = new THREE.MeshStandardMaterial({
+    color: 0x7a4a2b,
+    roughness: 0.9,
+  })
+  const heads = new THREE.InstancedMesh(headGeometry, headMaterial, reedCount)
+
+  const dummy = new THREE.Object3D()
+  const headDummy = new THREE.Object3D()
+
+  const waterEdgeZ = water.position.z + waterDepth / 2
+  const reedCenterZ = (shoreZ + waterEdgeZ) * 0.5
+  const reedBand = 0.7
+
+  for (let i = 0; i < reedCount; i += 1) {
+    const x = randRange(bounds.minX - 0.4, bounds.maxX + 0.4)
+    const z = randRange(reedCenterZ - reedBand, reedCenterZ + reedBand)
+    const height = randRange(0.22, 0.45)
+    const baseY = getGroundHeightAt(x, z) + randRange(-0.03, 0.02)
+
+    dummy.position.set(x, baseY + height * 0.5, z)
+    dummy.scale.set(1, height, 1)
+    dummy.rotation.set(
+      randRange(-0.12, 0.12),
+      randRange(0, Math.PI * 2),
+      randRange(-0.18, 0.18)
+    )
+    dummy.updateMatrix()
+    stalks.setMatrixAt(i, dummy.matrix)
+
+    const headScale = rand() > 0.2 ? randRange(0.6, 1) : 0.001
+    headDummy.position.set(x, baseY + height, z)
+    headDummy.scale.set(headScale, headScale, headScale)
+    headDummy.rotation.copy(dummy.rotation)
+    headDummy.updateMatrix()
+    heads.setMatrixAt(i, headDummy.matrix)
+  }
+
+  stalks.instanceMatrix.needsUpdate = true
+  heads.instanceMatrix.needsUpdate = true
+  group.add(stalks, heads)
+  return group
+}
+
+const createRoadStones = ({ bounds, shoreZ, getTerrainSample }) => {
+  const group = new THREE.Group()
+  const stoneCount = 140
+
+  const rand = (() => {
+    let seed = 903721
+    return () => {
+      seed |= 0
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  })()
+
+  const randRange = (min, max) => min + (max - min) * rand()
+
+  const stoneGeometry = new THREE.IcosahedronGeometry(0.035, 0)
+  const stoneMaterial = new THREE.MeshStandardMaterial({
+    color: 0xc3b7a3,
+    roughness: 0.95,
+  })
+  const stones = new THREE.InstancedMesh(stoneGeometry, stoneMaterial, stoneCount)
+  const dummy = new THREE.Object3D()
+
+  let placed = 0
+  let attempts = 0
+  const maxAttempts = stoneCount * 12
+
+  while (placed < stoneCount && attempts < maxAttempts) {
+    attempts += 1
+    const x = randRange(bounds.minX, bounds.maxX)
+    const z = randRange(shoreZ + 0.5, bounds.maxZ)
+    const sample = getTerrainSample(x, z)
+    if (sample.roadMask < 0.55) continue
+
+    const size = randRange(0.5, 1.2)
+    const y = sample.height + 0.01
+    dummy.position.set(x, y, z)
+    dummy.scale.set(size, size * 0.8, size)
+    dummy.rotation.set(
+      randRange(-0.2, 0.2),
+      randRange(0, Math.PI * 2),
+      randRange(-0.2, 0.2)
+    )
+    dummy.updateMatrix()
+    stones.setMatrixAt(placed, dummy.matrix)
+    placed += 1
+  }
+
+  stones.instanceMatrix.needsUpdate = true
+  group.add(stones)
   return group
 }
