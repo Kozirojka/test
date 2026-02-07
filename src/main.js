@@ -31,6 +31,8 @@ controls.target.set(0, 0.2, 0)
 controls.maxPolarAngle = Math.PI * 0.48
 controls.minDistance = 2
 controls.maxDistance = 7
+controls.enabled = true
+controls.enablePan = false
 
 const hemisphereLight = new THREE.HemisphereLight(0xbfd8ff, 0xf2d6a2, 0.7)
 const sunLight = new THREE.DirectionalLight(0xffffff, 1)
@@ -178,19 +180,32 @@ const createShore = () => {
   const ground = new THREE.Mesh(groundGeometry, groundMaterial)
   ground.position.z = groundCenterZ
 
-  const waterWidth = 16
-  const waterDepth = 10
-  const waterGeometry = new THREE.PlaneGeometry(waterWidth, waterDepth, 1, 1)
-  const waterMaterial = new THREE.MeshStandardMaterial({
+  const waterWidth = 14
+  const waterDepth = 8
+  const waterGeometry = new THREE.PlaneGeometry(waterWidth, waterDepth, 28, 18)
+  const waterMaterial = new THREE.MeshPhongMaterial({
     color: 0x2a6fb2,
-    roughness: 0.25,
-    metalness: 0.25,
+    specular: 0x7fd9ff,
+    shininess: 70,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.95,
+    side: THREE.DoubleSide,
   })
   const water = new THREE.Mesh(waterGeometry, waterMaterial)
   water.rotation.x = -Math.PI / 2
-  water.position.set(0, -0.25, shoreZ - waterDepth / 2 + 0.3)
+  water.position.set(0, -0.22, shoreZ - waterDepth / 2 + 0.8)
+
+  const waterWireMaterial = new THREE.MeshBasicMaterial({
+    color: 0x9ad8ff,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+  })
+  const waterWire = new THREE.Mesh(waterGeometry, waterWireMaterial)
+  waterWire.rotation.copy(water.rotation)
+  waterWire.position.copy(water.position)
+  waterWire.renderOrder = 1
 
   const bounds = {
     minX: -groundWidth / 2 + 0.6,
@@ -200,17 +215,18 @@ const createShore = () => {
   }
 
   const group = new THREE.Group()
-  group.add(water, ground)
+  group.add(water, waterWire, ground)
   return {
     group,
     ground,
     getGroundHeightAt,
     bounds,
     shoreZ,
+    water,
   }
 }
 
-const { group: shore, ground, getGroundHeightAt, bounds, shoreZ } =
+const { group: shore, ground, getGroundHeightAt, bounds, shoreZ, water } =
   createShore()
 scene.add(shore)
 
@@ -414,6 +430,54 @@ const blanketDisplacements = new Float32Array(blanketTopCount)
 
 scene.add(blanket)
 
+const createSwan = (bodyColor) => {
+  const swan = new THREE.Group()
+
+  const bodyGeometry = new THREE.SphereGeometry(0.12, 18, 12)
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: bodyColor,
+    roughness: 0.6,
+  })
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
+  body.scale.set(1.5, 0.9, 2)
+
+  const neckGeometry = new THREE.CylinderGeometry(0.02, 0.03, 0.26, 12)
+  const neck = new THREE.Mesh(neckGeometry, bodyMaterial)
+  neck.position.set(0, 0.16, 0.12)
+  neck.rotation.x = -Math.PI * 0.1
+
+  const headGeometry = new THREE.SphereGeometry(0.05, 12, 10)
+  const head = new THREE.Mesh(headGeometry, bodyMaterial)
+  head.position.set(0, 0.3, 0.18)
+
+  const beakGeometry = new THREE.ConeGeometry(0.025, 0.08, 10)
+  const beakMaterial = new THREE.MeshStandardMaterial({
+    color: 0xf2a14a,
+    roughness: 0.5,
+  })
+  const beak = new THREE.Mesh(beakGeometry, beakMaterial)
+  beak.position.set(0, 0.29, 0.25)
+  beak.rotation.x = Math.PI / 2
+
+  swan.add(body, neck, head, beak)
+  return swan
+}
+
+const waterSwans = []
+const addSwan = (color, offset, radius, speed) => {
+  const swan = createSwan(color)
+  swan.userData = {
+    offset,
+    radius,
+    speed,
+  }
+  waterSwans.push(swan)
+  scene.add(swan)
+}
+
+addSwan(0xffffff, 0, 0.9, 0.25)
+addSwan(0x1a1a1a, Math.PI, 0.7, -0.2)
+
 const surfaceRaycaster = new THREE.Raycaster()
 const surfaceOrigin = new THREE.Vector3()
 const surfaceDown = new THREE.Vector3(0, -1, 0)
@@ -575,6 +639,8 @@ const hero = createHero()
 const heroStartZ = picnicZ + 0.9
 hero.position.set(0, getGroundHeightAt(0, heroStartZ), heroStartZ)
 scene.add(hero)
+controls.target.copy(hero.position)
+const lastHeroPosition = hero.position.clone()
 
 const holdAnchor = new THREE.Object3D()
 holdAnchor.position.set(0.28, 0.38, 0.22)
@@ -584,6 +650,7 @@ const heroBounds = new THREE.Box3().setFromObject(hero)
 const heroSize = new THREE.Vector3()
 heroBounds.getSize(heroSize)
 const targetPropHeight = heroSize.y / 5
+
 
 scaleToHeight(heartMesh, targetPropHeight)
 scaleToHeight(bottleGroup, targetPropHeight)
@@ -694,6 +761,7 @@ const gravity = 3.2
 const propFriction = 0.85
 const propBounce = 0.2
 const propAngularDamp = 0.92
+const waterBaseY = water.position.y + 0.02
 
 const animate = () => {
   requestAnimationFrame(animate)
@@ -740,6 +808,36 @@ const animate = () => {
     hero.position.y = getGroundHeightAt(hero.position.x, hero.position.z)
     const facing = hero.position.clone().add(move)
     hero.lookAt(facing.x, hero.position.y, facing.z)
+  }
+
+  if (!hero.position.equals(lastHeroPosition)) {
+    const deltaHero = hero.position.clone().sub(lastHeroPosition)
+    camera.position.add(deltaHero)
+    controls.target.add(deltaHero)
+    lastHeroPosition.copy(hero.position)
+  }
+
+  const waterPositions = water.geometry.attributes.position
+  for (let i = 0; i < waterPositions.count; i += 1) {
+    const x = waterPositions.getX(i)
+    const y = waterPositions.getY(i)
+    const wave =
+      Math.sin(x * 1.2 + time * 1.6) * 0.07 +
+      Math.cos(y * 1.1 + time * 1.3) * 0.05 +
+      Math.sin((x + y) * 0.6 + time * 0.9) * 0.03
+    waterPositions.setZ(i, wave)
+  }
+  waterPositions.needsUpdate = true
+  water.geometry.computeVertexNormals()
+
+  for (const swan of waterSwans) {
+    const { offset, radius, speed } = swan.userData
+    const angle = time * speed + offset
+    const wx = water.position.x + Math.cos(angle) * radius
+    const wz = water.position.z + Math.sin(angle) * radius
+    swan.position.set(wx, waterBaseY + 0.06, wz)
+    swan.rotation.y = -angle + Math.PI / 2
+    swan.position.y += Math.sin(time * 2 + offset) * 0.01
   }
 
   for (const prop of props) {
