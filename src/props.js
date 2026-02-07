@@ -30,71 +30,93 @@ const createHeartMesh = () => {
   return mesh
 }
 
-const createBottleGroup = () => {
-  const profile = [
-    new THREE.Vector2(0, 0),
-    new THREE.Vector2(0.28, 0),
-    new THREE.Vector2(0.32, 0.05),
-    new THREE.Vector2(0.34, 0.2),
-    new THREE.Vector2(0.35, 0.6),
-    new THREE.Vector2(0.33, 1.1),
-    new THREE.Vector2(0.25, 1.35),
-    new THREE.Vector2(0.18, 1.55),
-    new THREE.Vector2(0.18, 1.7),
-    new THREE.Vector2(0.22, 1.78),
-    new THREE.Vector2(0, 1.8),
-  ]
+const createCanLabelTexture = ({ main, mid, dark, text, stripe }) => {
+  const width = 512
+  const height = 256
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
 
-  const bottleGeometry = new THREE.LatheGeometry(profile, 48)
-  bottleGeometry.computeBoundingBox()
-  if (bottleGeometry.boundingBox) {
-    const center = new THREE.Vector3()
-    bottleGeometry.boundingBox.getCenter(center)
-    bottleGeometry.translate(-center.x, -center.y, -center.z)
+  const grad = ctx.createLinearGradient(0, 0, width, 0)
+  grad.addColorStop(0, main)
+  grad.addColorStop(0.5, mid)
+  grad.addColorStop(1, dark)
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, width, height)
+
+  ctx.fillStyle = stripe
+  for (let i = 0; i < 14; i += 1) {
+    const x = (i / 14) * width
+    ctx.fillRect(x, 0, 6, height)
   }
 
-  const bottleMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2f5a3a,
-    metalness: 0.1,
-    roughness: 0.35,
-    transparent: true,
-    opacity: 0.85,
-  })
+  ctx.font = 'bold 96px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = text
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'
+  ctx.shadowBlur = 8
+  ctx.fillText('revo', width * 0.5, height * 0.52)
 
-  const bottle = new THREE.Mesh(bottleGeometry, bottleMaterial)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+  return texture
+}
 
-  const liquidProfile = [
-    new THREE.Vector2(0, 0.05),
-    new THREE.Vector2(0.26, 0.05),
-    new THREE.Vector2(0.3, 0.2),
-    new THREE.Vector2(0.31, 0.55),
-    new THREE.Vector2(0.3, 0.95),
-    new THREE.Vector2(0.2, 1.15),
-    new THREE.Vector2(0.18, 1.25),
-    new THREE.Vector2(0, 1.28),
-  ]
+const createCanGroup = (variant) => {
+  const radius = 0.22
+  const height = 0.7
+  const radialSegments = 32
 
-  const liquidGeometry = new THREE.LatheGeometry(liquidProfile, 48)
-  liquidGeometry.computeBoundingBox()
-  if (liquidGeometry.boundingBox) {
+  const canGeometry = new THREE.CylinderGeometry(
+    radius,
+    radius,
+    height,
+    radialSegments,
+    1,
+    false
+  )
+  canGeometry.computeBoundingBox()
+  if (canGeometry.boundingBox) {
     const center = new THREE.Vector3()
-    liquidGeometry.boundingBox.getCenter(center)
-    liquidGeometry.translate(-center.x, -center.y, -center.z)
+    canGeometry.boundingBox.getCenter(center)
+    canGeometry.translate(-center.x, -center.y, -center.z)
   }
 
-  const liquidMaterial = new THREE.MeshStandardMaterial({
-    color: 0x6b0d0d,
-    metalness: 0,
-    roughness: 0.6,
-    transparent: true,
-    opacity: 0.85,
+  const labelTexture = createCanLabelTexture(variant)
+  const canMaterial = new THREE.MeshStandardMaterial({
+    color: variant.shell,
+    metalness: 0.75,
+    roughness: 0.25,
+    map: labelTexture ?? undefined,
   })
+  if (labelTexture) {
+    labelTexture.repeat.set(1, 1)
+  }
 
-  const liquid = new THREE.Mesh(liquidGeometry, liquidMaterial)
+  const rimGeometry = new THREE.TorusGeometry(radius * 0.98, 0.018, 10, 32)
+  const rimMaterial = new THREE.MeshStandardMaterial({
+    color: variant.rim,
+    metalness: 0.8,
+    roughness: 0.2,
+  })
+  const topRim = new THREE.Mesh(rimGeometry, rimMaterial)
+  topRim.rotation.x = Math.PI / 2
+  topRim.position.y = height / 2 - 0.01
+
+  const bottomRim = topRim.clone()
+  bottomRim.position.y = -height / 2 + 0.01
+
+  const can = new THREE.Mesh(canGeometry, canMaterial)
 
   const group = new THREE.Group()
-  group.add(bottle, liquid)
-  group.scale.set(0.6, 0.6, 0.6)
+  group.add(can, topRim, bottomRim)
+  group.scale.set(0.7, 0.7, 0.7)
   group.rotation.y = -Math.PI * 0.15
   return group
 }
@@ -150,15 +172,34 @@ export const createPropSystem = ({
   }
 
   const heartMesh = createHeartMesh()
-  const bottleGroup = createBottleGroup()
+  const redCan = createCanGroup({
+    main: '#cf2b2b',
+    mid: '#ff3f3f',
+    dark: '#b81818',
+    text: '#fff4e6',
+    stripe: 'rgba(255,255,255,0.12)',
+    shell: 0xffe7d2,
+    rim: 0xf2e8dd,
+  })
+  const grayCan = createCanGroup({
+    main: '#9aa2ab',
+    mid: '#c4cbd3',
+    dark: '#7c838b',
+    text: '#f3f6f9',
+    stripe: 'rgba(255,255,255,0.18)',
+    shell: 0xe5e9ee,
+    rim: 0xf1f4f7,
+  })
   const targetPropHeight = heroSize.y / 5
 
   scaleToHeight(heartMesh, targetPropHeight)
-  scaleToHeight(bottleGroup, targetPropHeight)
+  scaleToHeight(redCan, targetPropHeight)
+  scaleToHeight(grayCan, targetPropHeight)
 
   placeOnSurface(heartMesh, -0.6, picnicZ + 0.05, propGroundEpsilon)
-  placeOnSurface(bottleGroup, 0.5, picnicZ - 0.15, propGroundEpsilon)
-  scene.add(heartMesh, bottleGroup)
+  placeOnSurface(redCan, 0.5, picnicZ - 0.15, propGroundEpsilon)
+  placeOnSurface(grayCan, 0.15, picnicZ - 0.35, propGroundEpsilon)
+  scene.add(heartMesh, redCan, grayCan)
 
   const heroRadius = 0.5 * Math.max(heroSize.x, heroSize.z)
   const createPropBody = (mesh) => {
@@ -176,7 +217,11 @@ export const createPropSystem = ({
     }
   }
 
-  const props = [createPropBody(heartMesh), createPropBody(bottleGroup)]
+  const props = [
+    createPropBody(heartMesh),
+    createPropBody(redCan),
+    createPropBody(grayCan),
+  ]
   const actionHint = createActionHint()
   const actionProject = new THREE.Vector3()
   const holdAnchor = new THREE.Object3D()
