@@ -332,6 +332,63 @@ const createKissHint = () => {
 
 const kissHint = createKissHint()
 
+const fireworks = []
+const createFireworkBurst = (origin) => {
+  const count = 40
+  const positions = new Float32Array(count * 3)
+  const velocities = new Float32Array(count * 3)
+  for (let i = 0; i < count; i += 1) {
+    const i3 = i * 3
+    positions[i3] = origin.x
+    positions[i3 + 1] = origin.y
+    positions[i3 + 2] = origin.z
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.random() * Math.PI * 0.5
+    const speed = 0.5 + Math.random() * 0.9
+    velocities[i3] = Math.cos(theta) * Math.cos(phi) * speed
+    velocities[i3 + 1] = Math.sin(phi) * speed + 0.3
+    velocities[i3 + 2] = Math.sin(theta) * Math.cos(phi) * speed
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const material = new THREE.PointsMaterial({
+    color: 0xfff2a6,
+    size: 0.06,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  })
+  const points = new THREE.Points(geometry, material)
+  points.userData = { velocities, life: 1.2, maxLife: 1.2 }
+  scene.add(points)
+  fireworks.push(points)
+}
+
+const updateFireworks = (delta) => {
+  for (let i = fireworks.length - 1; i >= 0; i -= 1) {
+    const points = fireworks[i]
+    const positions = points.geometry.attributes.position
+    const velocities = points.userData.velocities
+    points.userData.life -= delta
+    const lifeT = Math.max(points.userData.life / points.userData.maxLife, 0)
+    points.material.opacity = lifeT
+    for (let j = 0; j < positions.count; j += 1) {
+      const j3 = j * 3
+      velocities[j3 + 1] -= 0.9 * delta
+      positions.array[j3] += velocities[j3] * delta
+      positions.array[j3 + 1] += velocities[j3 + 1] * delta
+      positions.array[j3 + 2] += velocities[j3 + 2] * delta
+    }
+    positions.needsUpdate = true
+    if (points.userData.life <= 0) {
+      scene.remove(points)
+      points.geometry.dispose()
+      points.material.dispose()
+      fireworks.splice(i, 1)
+    }
+  }
+}
+
 const createEdgeSign = (text) => {
   const width = 640
   const height = 320
@@ -365,7 +422,7 @@ const createEdgeSign = (text) => {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  const wrapText = (value, maxWidth) => {
+  const wrapLine = (value, maxWidth) => {
     const words = value.split(' ')
     const lines = []
     let line = ''
@@ -382,13 +439,49 @@ const createEdgeSign = (text) => {
     return lines
   }
 
-  const lines = wrapText(text, width - 80)
-  const lineHeight = 34
-  const totalHeight = lines.length * lineHeight
-  const startY = height / 2 - totalHeight / 2 + lineHeight / 2
-  lines.forEach((line, index) => {
-    ctx.fillText(line, width / 2, startY + index * lineHeight)
-  })
+  const wrapText = (value, maxWidth) => {
+    const parts = value.split('\n')
+    const lines = []
+    for (const part of parts) {
+      lines.push(...wrapLine(part, maxWidth))
+    }
+    return lines
+  }
+
+  const drawText = (value) => {
+    ctx.clearRect(0, 0, width, height)
+    ctx.fillStyle = 'rgba(16, 18, 24, 0.85)'
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'
+    ctx.lineWidth = 6
+    const radius = 28
+    ctx.beginPath()
+    ctx.moveTo(radius, 0)
+    ctx.lineTo(width - radius, 0)
+    ctx.quadraticCurveTo(width, 0, width, radius)
+    ctx.lineTo(width, height - radius)
+    ctx.quadraticCurveTo(width, height, width - radius, height)
+    ctx.lineTo(radius, height)
+    ctx.quadraticCurveTo(0, height, 0, height - radius)
+    ctx.lineTo(0, radius)
+    ctx.quadraticCurveTo(0, 0, radius, 0)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.fillStyle = '#f7e9ef'
+    ctx.font = 'bold 26px Arial'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const lines = wrapText(value, width - 80)
+    const lineHeight = 34
+    const totalHeight = lines.length * lineHeight
+    const startY = height / 2 - totalHeight / 2 + lineHeight / 2
+    lines.forEach((line, index) => {
+      ctx.fillText(line, width / 2, startY + index * lineHeight)
+    })
+  }
+
+  drawText(text)
 
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
@@ -405,16 +498,47 @@ const createEdgeSign = (text) => {
   const sign = new THREE.Mesh(geometry, material)
   sign.visible = true
   sign.userData.baseScale = 1
+  sign.userData.drawText = (value) => {
+    drawText(value)
+    texture.needsUpdate = true
+  }
   sign.renderOrder = 2
   return sign
 }
 
-const edgeSignLeft = createEdgeSign(
-  'Відгадайте загадку, щоб відкрити новий рівень'
-)
-const edgeSignRight = createEdgeSign(
-  'Відгадайте загадку, щоб відкрити новий рівень'
-)
+const edgeDefaultText =
+  'Щоб пройти до наступного етапу, потрібно відповісти на запитання. Нажміть C, щоб почати.'
+const edgeHintText = edgeDefaultText
+const edgeQuestionText = 'Які квіти Сія любить найбільше?'
+const edgeQuestions = [
+  {
+    text: 'Які квіти Сія любить найбільше?',
+    options: ['Троянди', 'Півонії', 'Лілії'],
+    correct: 1,
+  },
+  {
+    text: 'Який колір асоціюється з Валентином?',
+    options: ['Синій', 'Червоний', 'Зелений'],
+    correct: 1,
+  },
+  {
+    text: 'Що символізує сердечко?',
+    options: ['Дружбу', 'Кохання', 'Подорожі'],
+    correct: 1,
+  },
+  {
+    text: 'Коли святкують День святого Валентина?',
+    options: ['14 лютого', '8 березня', '1 травня'],
+    correct: 0,
+  },
+  {
+    text: 'Що найчастіше дарують на Валентина?',
+    options: ['Листівку', 'Шкарпетки', 'Парасольку'],
+    correct: 0,
+  },
+]
+const edgeSignLeft = createEdgeSign(edgeDefaultText)
+const edgeSignRight = createEdgeSign(edgeDefaultText)
 const findRoadCenterZ = (x) => {
   const steps = 50
   let bestZ = shoreZ + 1.0
@@ -457,6 +581,10 @@ if (edgeSignLeft && edgeSignRight) {
   edgeSignRight.userData.triggerPos = edgeSignRight.position.clone()
   edgeSignLeft.userData.triggerRadius = 1.6
   edgeSignRight.userData.triggerRadius = 1.6
+  edgeSignLeft.userData.basePos = edgeSignLeft.position.clone()
+  edgeSignRight.userData.basePos = edgeSignRight.position.clone()
+  edgeSignLeft.userData.baseRot = edgeSignLeft.rotation.clone()
+  edgeSignRight.userData.baseRot = edgeSignRight.rotation.clone()
 }
 
 const heroBounds = new THREE.Box3().setFromObject(hero)
@@ -498,6 +626,48 @@ scene.add(forest)
 
 const keys = new Set()
 let kissRequested = false
+let edgeSignProximity = false
+const edgeTyping = {
+  active: false,
+  progress: 0,
+  speed: 22,
+}
+let edgeSignMode = 'default'
+const edgeQuiz = {
+  active: false,
+  completed: false,
+  current: 0,
+  selected: null,
+  result: null,
+  advanceTimer: 0,
+}
+const getEdgeOptionsText = () => {
+  const question = edgeQuestions[edgeQuiz.current]
+  if (!question) return ''
+  const lines = question.options.map((option, index) => {
+    const key = `${index + 1}`
+    const marker = edgeQuiz.selected === key ? ' ◀' : ''
+    return `${key}) ${option}${marker}`
+  })
+  lines.push('Enter — підтвердити')
+  if (edgeQuiz.result === 'correct') {
+    lines.push('Правильно!')
+  } else if (edgeQuiz.result === 'wrong') {
+    lines.push('Неправильно, спробуй ще.')
+  }
+  return lines.join('\n')
+}
+const getEdgeQuestionText = () => {
+  const question = edgeQuestions[edgeQuiz.current]
+  if (!question) return ''
+  const progress = `Питання ${edgeQuiz.current + 1}/${edgeQuestions.length}`
+  return `${progress}\n${question.text}\n${getEdgeOptionsText()}`
+}
+const updateEdgeSignText = (value) => {
+  if (edgeSignLeft?.userData?.drawText) {
+    edgeSignLeft.userData.drawText(value)
+  }
+}
 const onKeyDown = (event) => {
   const key = event.key.toLowerCase()
   const code = event.code
@@ -507,6 +677,54 @@ const onKeyDown = (event) => {
   }
   if (key === 'b' || code === 'KeyB') {
     kissRequested = true
+  }
+  if (
+    (key === 'c' || code === 'KeyC') &&
+    edgeSignProximity &&
+    !edgeQuiz.active &&
+    !edgeQuiz.completed
+  ) {
+    edgeQuiz.active = true
+    edgeQuiz.current = 0
+    edgeQuiz.selected = null
+    edgeQuiz.result = null
+    edgeQuiz.advanceTimer = 0
+    edgeTyping.active = true
+    edgeTyping.progress = 0
+    edgeSignMode = 'typing'
+  }
+  if (edgeSignProximity && edgeQuiz.active && !edgeTyping.active) {
+    if (key === '1' || code === 'Digit1' || code === 'Numpad1') {
+      edgeQuiz.selected = '1'
+      updateEdgeSignText(getEdgeQuestionText())
+    } else if (key === '2' || code === 'Digit2' || code === 'Numpad2') {
+      edgeQuiz.selected = '2'
+      updateEdgeSignText(getEdgeQuestionText())
+    } else if (key === '3' || code === 'Digit3' || code === 'Numpad3') {
+      edgeQuiz.selected = '3'
+      updateEdgeSignText(getEdgeQuestionText())
+    }
+    if (key === 'enter' || code === 'Enter') {
+      if (edgeQuiz.selected) {
+        const question = edgeQuestions[edgeQuiz.current]
+        const correctKey = `${question.correct + 1}`
+        if (edgeQuiz.selected === correctKey) {
+          edgeQuiz.result = 'correct'
+          edgeQuiz.advanceTimer = 1.2
+          const basePos = edgeSignLeft?.userData?.basePos
+          if (basePos) {
+            createFireworkBurst(
+              new THREE.Vector3(basePos.x, basePos.y + 0.6, basePos.z)
+            )
+          }
+        } else {
+          edgeQuiz.result = 'wrong'
+          edgeQuiz.advanceTimer = 0
+          edgeSignLeft.userData.shakeTimer = 0.45
+        }
+        updateEdgeSignText(getEdgeQuestionText())
+      }
+    }
   }
   propSystem.handleKeyDown(event)
 }
@@ -799,9 +1017,89 @@ const animate = () => {
         hero.position.x > bounds.maxX - edgeThreshold ||
         heroTwo.position.x > bounds.maxX - edgeThreshold
     }
+    edgeSignProximity = endHit
     edgeSignLeft.visible = endHit
     edgeSignRight.visible = false
+    if (!edgeSignProximity) {
+      edgeTyping.active = false
+      edgeTyping.progress = 0
+      edgeQuiz.active = false
+      edgeQuiz.current = 0
+      edgeQuiz.selected = null
+      edgeQuiz.result = null
+      edgeQuiz.advanceTimer = 0
+      if (edgeSignMode !== 'default' && edgeSignLeft.userData.drawText) {
+        edgeSignLeft.userData.drawText(edgeDefaultText)
+        edgeSignMode = 'default'
+      }
+    } else if (!edgeQuiz.active && !edgeQuiz.completed) {
+      if (edgeSignMode !== 'hint' && edgeSignLeft.userData.drawText) {
+        edgeSignLeft.userData.drawText(edgeHintText)
+        edgeSignMode = 'hint'
+      }
+    }
   }
+
+  if (edgeTyping.active && edgeSignLeft?.userData?.drawText) {
+    edgeTyping.progress += delta * edgeTyping.speed
+    const count = Math.min(
+      Math.floor(edgeTyping.progress),
+      edgeQuestions[edgeQuiz.current]?.text?.length ?? 0
+    )
+    const progressLine = `Питання ${edgeQuiz.current + 1}/${edgeQuestions.length}`
+    const question = edgeQuestions[edgeQuiz.current]
+    edgeSignLeft.userData.drawText(
+      `${progressLine}\n${question.text.slice(0, count)}`
+    )
+    if (question && count >= question.text.length) {
+      edgeTyping.active = false
+      edgeSignMode = 'quiz'
+      updateEdgeSignText(getEdgeQuestionText())
+    }
+  }
+
+  if (edgeQuiz.active && edgeQuiz.advanceTimer > 0) {
+    edgeQuiz.advanceTimer = Math.max(0, edgeQuiz.advanceTimer - delta)
+    if (edgeQuiz.advanceTimer === 0 && edgeQuiz.result === 'correct') {
+      if (edgeQuiz.current < edgeQuestions.length - 1) {
+        edgeQuiz.current += 1
+        edgeQuiz.selected = null
+        edgeQuiz.result = null
+        edgeTyping.active = true
+        edgeTyping.progress = 0
+        edgeSignMode = 'typing'
+      } else {
+        edgeQuiz.completed = true
+        edgeQuiz.active = false
+        edgeSignMode = 'completed'
+        updateEdgeSignText('Всі відповіді правильні!\nНову локацію відкрито!')
+      }
+    }
+  }
+
+  if (edgeSignLeft?.userData?.shakeTimer) {
+    edgeSignLeft.userData.shakeTimer = Math.max(
+      0,
+      edgeSignLeft.userData.shakeTimer - delta
+    )
+    const shakeT = edgeSignLeft.userData.shakeTimer / 0.45
+    const basePos = edgeSignLeft.userData.basePos
+    const baseRot = edgeSignLeft.userData.baseRot
+    if (basePos && baseRot) {
+      edgeSignLeft.position.x = basePos.x + Math.sin(time * 45) * 0.04 * shakeT
+      edgeSignLeft.position.y = basePos.y + Math.sin(time * 55) * 0.02 * shakeT
+      edgeSignLeft.position.z = basePos.z
+      edgeSignLeft.rotation.x = baseRot.x
+      edgeSignLeft.rotation.y = baseRot.y
+      edgeSignLeft.rotation.z = Math.sin(time * 60) * 0.06 * shakeT
+      if (edgeSignLeft.userData.shakeTimer === 0) {
+        edgeSignLeft.position.copy(basePos)
+        edgeSignLeft.rotation.copy(baseRot)
+      }
+    }
+  }
+
+  updateFireworks(delta)
 
   controls.update()
   renderer.render(scene, camera)
