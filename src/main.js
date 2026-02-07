@@ -71,6 +71,30 @@ const createHero = ({
   head.position.y = 0.62
   hero.add(body, head)
 
+  const addFace = (eyeColorValue, lipColorValue) => {
+    const eyeMaterial = new THREE.MeshStandardMaterial({
+      color: eyeColorValue,
+      roughness: 0.4,
+      metalness: 0.1,
+    })
+    const eyeGeometry = new THREE.SphereGeometry(0.025, 12, 10)
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
+    leftEye.position.set(-0.05, 0.64, 0.14)
+    rightEye.position.set(0.05, 0.64, 0.14)
+
+    const lipGeometry = new THREE.CapsuleGeometry(0.03, 0.02, 4, 8)
+    const lipMaterial = new THREE.MeshStandardMaterial({
+      color: lipColorValue,
+      roughness: 0.6,
+    })
+    const lips = new THREE.Mesh(lipGeometry, lipMaterial)
+    lips.position.set(0, 0.58, 0.13)
+    lips.rotation.x = Math.PI / 2
+
+    hero.add(leftEye, rightEye, lips)
+  }
+
   if (style === 'female') {
     const dressGeometry = new THREE.ConeGeometry(0.3 * slimFactor, 0.55, 28)
     const dressMaterial = new THREE.MeshStandardMaterial({
@@ -116,26 +140,7 @@ const createHero = ({
     bangs.position.set(0, 0.78, 0.04)
     bangs.rotation.x = -Math.PI * 0.07
 
-    const eyeMaterial = new THREE.MeshStandardMaterial({
-      color: eyeColor ?? 0x2f9b4f,
-      roughness: 0.4,
-      metalness: 0.1,
-    })
-    const eyeGeometry = new THREE.SphereGeometry(0.025, 12, 10)
-    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
-    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
-    leftEye.position.set(-0.05, 0.64, 0.14)
-    rightEye.position.set(0.05, 0.64, 0.14)
-
-    const lipGeometry = new THREE.CapsuleGeometry(0.03, 0.02, 4, 8)
-    const lipMaterial = new THREE.MeshStandardMaterial({
-      color: lipColor ?? 0xd96b7a,
-      roughness: 0.6,
-    })
-    const lips = new THREE.Mesh(lipGeometry, lipMaterial)
-    lips.position.set(0, 0.58, 0.13)
-    lips.rotation.x = Math.PI / 2
-
+    addFace(eyeColor ?? 0x2f9b4f, lipColor ?? 0xd96b7a)
     const earringGeometry = new THREE.SphereGeometry(0.015, 10, 8)
     const earringMaterial = new THREE.MeshStandardMaterial({
       color: 0xf2d7a6,
@@ -155,9 +160,6 @@ const createHero = ({
       hairSideLeft,
       hairSideRight,
       bangs,
-      leftEye,
-      rightEye,
-      lips,
       leftEarring,
       rightEarring
     )
@@ -170,6 +172,7 @@ const createHero = ({
     const hat = new THREE.Mesh(hatGeometry, hatMaterial)
     hat.position.y = 0.74
     hero.add(hat)
+    addFace(eyeColor ?? 0x0a0a0a, lipColor ?? 0xd96b7a)
   }
 
   hero.scale.setScalar(scale)
