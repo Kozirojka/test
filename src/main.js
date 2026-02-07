@@ -34,10 +34,25 @@ const { blanket, updateBlanket, getSurfaceHeightAt } = createBlanket({
 })
 scene.add(blanket)
 
-const createHero = ({ bodyColor, hatColor } = {}) => {
+const createHero = ({
+  bodyColor,
+  hatColor,
+  dressColor,
+  hairColor,
+  eyeColor,
+  lipColor,
+  scale = 1,
+  slimFactor = 1,
+  style = 'default',
+} = {}) => {
   const hero = new THREE.Group()
 
-  const bodyGeometry = new THREE.CylinderGeometry(0.18, 0.22, 0.5, 24)
+  const bodyGeometry = new THREE.CylinderGeometry(
+    0.18 * slimFactor,
+    0.22 * slimFactor,
+    0.5,
+    24
+  )
   const bodyMaterial = new THREE.MeshStandardMaterial({
     color: bodyColor ?? 0x2c5cff,
     roughness: 0.5,
@@ -54,16 +69,110 @@ const createHero = ({ bodyColor, hatColor } = {}) => {
   })
   const head = new THREE.Mesh(headGeometry, headMaterial)
   head.position.y = 0.62
+  hero.add(body, head)
 
-  const hatGeometry = new THREE.CylinderGeometry(0.12, 0.14, 0.08, 20)
-  const hatMaterial = new THREE.MeshStandardMaterial({
-    color: hatColor ?? 0x1d1c2c,
-    roughness: 0.7,
-  })
-  const hat = new THREE.Mesh(hatGeometry, hatMaterial)
-  hat.position.y = 0.74
+  if (style === 'female') {
+    const dressGeometry = new THREE.ConeGeometry(0.3 * slimFactor, 0.55, 28)
+    const dressMaterial = new THREE.MeshStandardMaterial({
+      color: dressColor ?? 0xff7aa2,
+      roughness: 0.6,
+      metalness: 0.05,
+    })
+    const dress = new THREE.Mesh(dressGeometry, dressMaterial)
+    dress.position.y = 0.1
 
-  hero.add(body, head, hat)
+    const hairMaterial = new THREE.MeshStandardMaterial({
+      color: hairColor ?? 0x6b3f2a,
+      roughness: 0.6,
+      metalness: 0.1,
+    })
+    const hairTopGeometry = new THREE.SphereGeometry(0.185, 22, 16)
+    const hairTop = new THREE.Mesh(hairTopGeometry, hairMaterial)
+    hairTop.position.set(0, 0.69, -0.02)
+    hairTop.scale.set(1.02, 0.86, 1.02)
+
+    const hairCapGeometry = new THREE.SphereGeometry(0.175, 20, 14)
+    const hairCap = new THREE.Mesh(hairCapGeometry, hairMaterial)
+    hairCap.position.set(0, 0.665, -0.02)
+    hairCap.scale.set(0.98, 0.76, 0.98)
+
+    const hairBackGeometry = new THREE.CylinderGeometry(0.14, 0.18, 0.34, 18)
+    const hairBack = new THREE.Mesh(hairBackGeometry, hairMaterial)
+    hairBack.position.set(0, 0.5, -0.07)
+    hairBack.rotation.x = Math.PI * 0.08
+
+    const hairSideGeometry = new THREE.CylinderGeometry(0.07, 0.09, 0.22, 12)
+    const hairSideLeft = new THREE.Mesh(hairSideGeometry, hairMaterial)
+    hairSideLeft.position.set(-0.16, 0.56, 0.02)
+    hairSideLeft.rotation.z = Math.PI * 0.08
+    hairSideLeft.rotation.x = Math.PI * 0.12
+
+    const hairSideRight = hairSideLeft.clone()
+    hairSideRight.position.x = 0.16
+    hairSideRight.rotation.z = -Math.PI * 0.08
+
+    const bangsGeometry = new THREE.BoxGeometry(0.18, 0.03, 0.03)
+    const bangs = new THREE.Mesh(bangsGeometry, hairMaterial)
+    bangs.position.set(0, 0.78, 0.04)
+    bangs.rotation.x = -Math.PI * 0.07
+
+    const eyeMaterial = new THREE.MeshStandardMaterial({
+      color: eyeColor ?? 0x2f9b4f,
+      roughness: 0.4,
+      metalness: 0.1,
+    })
+    const eyeGeometry = new THREE.SphereGeometry(0.025, 12, 10)
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial)
+    leftEye.position.set(-0.05, 0.64, 0.14)
+    rightEye.position.set(0.05, 0.64, 0.14)
+
+    const lipGeometry = new THREE.CapsuleGeometry(0.03, 0.02, 4, 8)
+    const lipMaterial = new THREE.MeshStandardMaterial({
+      color: lipColor ?? 0xd96b7a,
+      roughness: 0.6,
+    })
+    const lips = new THREE.Mesh(lipGeometry, lipMaterial)
+    lips.position.set(0, 0.58, 0.13)
+    lips.rotation.x = Math.PI / 2
+
+    const earringGeometry = new THREE.SphereGeometry(0.015, 10, 8)
+    const earringMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf2d7a6,
+      metalness: 0.7,
+      roughness: 0.2,
+    })
+    const leftEarring = new THREE.Mesh(earringGeometry, earringMaterial)
+    const rightEarring = new THREE.Mesh(earringGeometry, earringMaterial)
+    leftEarring.position.set(-0.13, 0.61, 0.02)
+    rightEarring.position.set(0.13, 0.61, 0.02)
+
+    hero.add(
+      dress,
+      hairTop,
+      hairCap,
+      hairBack,
+      hairSideLeft,
+      hairSideRight,
+      bangs,
+      leftEye,
+      rightEye,
+      lips,
+      leftEarring,
+      rightEarring
+    )
+  } else {
+    const hatGeometry = new THREE.CylinderGeometry(0.12, 0.14, 0.08, 20)
+    const hatMaterial = new THREE.MeshStandardMaterial({
+      color: hatColor ?? 0x1d1c2c,
+      roughness: 0.7,
+    })
+    const hat = new THREE.Mesh(hatGeometry, hatMaterial)
+    hat.position.y = 0.74
+    hero.add(hat)
+  }
+
+  hero.scale.setScalar(scale)
   return hero
 }
 
@@ -72,7 +181,16 @@ const heroStartZ = picnicZ + 0.9
 hero.position.set(0, getGroundHeightAt(0, heroStartZ), heroStartZ)
 scene.add(hero)
 
-const heroTwo = createHero({ bodyColor: 0xff6b6b, hatColor: 0x6b1d1d })
+const heroTwo = createHero({
+  style: 'female',
+  bodyColor: 0xffc1d7,
+  dressColor: 0xff91b2,
+  hairColor: 0x6b3f2a,
+  eyeColor: 0x3aa35f,
+  lipColor: 0xd96b7a,
+  scale: 0.88,
+  slimFactor: 0.85,
+})
 const heroTwoStartZ = picnicZ + 0.6
 heroTwo.position.set(0.7, getGroundHeightAt(0.7, heroTwoStartZ), heroTwoStartZ)
 scene.add(heroTwo)
