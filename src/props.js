@@ -114,10 +114,38 @@ const createCanGroup = (variant) => {
 
   const can = new THREE.Mesh(canGeometry, canMaterial)
 
+  const lidGeometry = new THREE.CylinderGeometry(
+    radius * 0.96,
+    radius * 0.96,
+    0.02,
+    radialSegments
+  )
+  const lidMaterial = new THREE.MeshStandardMaterial({
+    color: variant.rim,
+    metalness: 0.85,
+    roughness: 0.2,
+  })
+  const lid = new THREE.Mesh(lidGeometry, lidMaterial)
+  lid.position.y = height / 2 - 0.01
+
+  const tabGeometry = new THREE.BoxGeometry(0.08, 0.01, 0.04)
+  const tabMaterial = new THREE.MeshStandardMaterial({
+    color: 0xdad6cf,
+    metalness: 0.8,
+    roughness: 0.25,
+  })
+  const tab = new THREE.Mesh(tabGeometry, tabMaterial)
+  tab.position.set(0.05, height / 2 + 0.01, 0.06)
+
   const group = new THREE.Group()
-  group.add(can, topRim, bottomRim)
+  group.add(can, topRim, bottomRim, lid, tab)
   group.scale.set(0.7, 0.7, 0.7)
   group.rotation.y = -Math.PI * 0.15
+  group.userData.type = 'can'
+  group.userData.opened = false
+  group.userData.canHeight = height
+  group.userData.tab = tab
+  group.userData.lid = lid
   return group
 }
 
@@ -148,6 +176,28 @@ const createActionHint = () => {
   hint.style.whiteSpace = 'nowrap'
   hint.style.display = 'none'
   hint.style.boxShadow = '0 8px 18px rgba(0,0,0,0.25)'
+  document.body.appendChild(hint)
+  return hint
+}
+
+const createOpenHint = () => {
+  const hint = document.createElement('div')
+  hint.textContent = 'Press O щоб відкрити банку'
+  hint.style.position = 'fixed'
+  hint.style.left = '50%'
+  hint.style.bottom = '24px'
+  hint.style.transform = 'translateX(-50%)'
+  hint.style.padding = '8px 14px'
+  hint.style.borderRadius = '10px'
+  hint.style.background = 'rgba(16, 18, 24, 0.85)'
+  hint.style.color = '#f7e9ef'
+  hint.style.fontSize = '14px'
+  hint.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+  hint.style.letterSpacing = '0.2px'
+  hint.style.pointerEvents = 'none'
+  hint.style.whiteSpace = 'nowrap'
+  hint.style.display = 'none'
+  hint.style.boxShadow = '0 10px 22px rgba(0,0,0,0.28)'
   document.body.appendChild(hint)
   return hint
 }
@@ -214,6 +264,8 @@ export const createPropSystem = ({
       halfHeight: size.y / 2 + propGroundEpsilon,
       cooldown: 0,
       held: false,
+      isCan: mesh.userData?.type === 'can',
+      opened: mesh.userData?.opened ?? false,
     }
   }
 
@@ -223,13 +275,75 @@ export const createPropSystem = ({
     createPropBody(grayCan),
   ]
   const actionHint = createActionHint()
+  const openHint = createOpenHint()
   const actionProject = new THREE.Vector3()
-  const holdAnchor = new THREE.Object3D()
-  holdAnchor.position.set(0.28, 0.38, 0.22)
-  hero.add(holdAnchor)
+  const holdRight = new THREE.Object3D()
+  const holdLeft = new THREE.Object3D()
+  holdRight.position.set(0.28, 0.38, 0.22)
+  holdLeft.position.set(-0.28, 0.38, 0.22)
+  hero.add(holdRight, holdLeft)
 
   let activeProp = null
-  let heldProp = null
+  let heldRightProp = null
+  let heldLeftProp = null
+
+  const openEffects = []
+
+  const createOpenEffect = (position) => {
+    const count = 18
+    const positions = new Float32Array(count * 3)
+    const velocities = new Float32Array(count * 3)
+    for (let i = 0; i < count; i += 1) {
+      const i3 = i * 3
+      positions[i3] = 0
+      positions[i3 + 1] = 0
+      positions[i3 + 2] = 0
+      velocities[i3] = (Math.random() - 0.5) * 0.25
+      velocities[i3 + 1] = 0.35 + Math.random() * 0.2
+      velocities[i3 + 2] = (Math.random() - 0.5) * 0.25
+    }
+
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const material = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.04,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    })
+    const points = new THREE.Points(geometry, material)
+    points.position.copy(position)
+    scene.add(points)
+    openEffects.push({ points, velocities, life: 0.6 })
+  }
+
+  const updateOpenEffects = (delta) => {
+    for (let i = openEffects.length - 1; i >= 0; i -= 1) {
+      const effect = openEffects[i]
+      effect.life -= delta
+      const positions = effect.points.geometry.attributes.position
+      const velocity = effect.velocities
+      for (let j = 0; j < positions.count; j += 1) {
+        const j3 = j * 3
+        positions.setXYZ(
+          j,
+          positions.getX(j) + velocity[j3] * delta,
+          positions.getY(j) + velocity[j3 + 1] * delta,
+          positions.getZ(j) + velocity[j3 + 2] * delta
+        )
+        velocity[j3 + 1] -= 0.6 * delta
+      }
+      positions.needsUpdate = true
+      effect.points.material.opacity = Math.max(0, effect.life / 0.6)
+      if (effect.life <= 0) {
+        scene.remove(effect.points)
+        effect.points.geometry.dispose()
+        effect.points.material.dispose()
+        openEffects.splice(i, 1)
+      }
+    }
+  }
 
   const gravity = 3.2
   const propFriction = 0.85
@@ -305,76 +419,141 @@ export const createPropSystem = ({
       prop.mesh.rotation.y += prop.angular.y * delta
       prop.mesh.rotation.z += prop.angular.z * delta
     }
+    updateOpenEffects(delta)
   }
 
   const updateActionHint = () => {
-    if (heldProp) {
+    if (heldLeftProp && heldRightProp) {
       actionHint.style.display = 'none'
-      return
-    }
+    } else {
+      activeProp = null
+      let nearestDist = Infinity
+      for (const prop of props) {
+        if (prop.held) continue
+        const dx = prop.mesh.position.x - hero.position.x
+        const dz = prop.mesh.position.z - hero.position.z
+        const dist = Math.hypot(dx, dz)
+        const range = heroRadius + prop.radius + 0.2
+        if (dist < range && dist < nearestDist) {
+          nearestDist = dist
+          activeProp = prop
+        }
+      }
 
-    activeProp = null
-    let nearestDist = Infinity
-    for (const prop of props) {
-      if (prop.held) continue
-      const dx = prop.mesh.position.x - hero.position.x
-      const dz = prop.mesh.position.z - hero.position.z
-      const dist = Math.hypot(dx, dz)
-      const range = heroRadius + prop.radius + 0.2
-      if (dist < range && dist < nearestDist) {
-        nearestDist = dist
-        activeProp = prop
+      if (activeProp) {
+        const rect = renderer.domElement.getBoundingClientRect()
+        actionProject.copy(activeProp.mesh.position)
+        actionProject.y += activeProp.halfHeight + 0.05
+        actionProject.project(camera)
+        const screenX = (actionProject.x * 0.5 + 0.5) * rect.width + rect.left
+        const screenY = (-actionProject.y * 0.5 + 0.5) * rect.height + rect.top
+        actionHint.style.left = `${screenX}px`
+        actionHint.style.top = `${screenY}px`
+        actionHint.style.display = 'block'
+      } else {
+        actionHint.style.display = 'none'
       }
     }
 
-    if (activeProp) {
-      const rect = renderer.domElement.getBoundingClientRect()
-      actionProject.copy(activeProp.mesh.position)
-      actionProject.y += activeProp.halfHeight + 0.05
-      actionProject.project(camera)
-      const screenX = (actionProject.x * 0.5 + 0.5) * rect.width + rect.left
-      const screenY = (-actionProject.y * 0.5 + 0.5) * rect.height + rect.top
-      actionHint.style.left = `${screenX}px`
-      actionHint.style.top = `${screenY}px`
-      actionHint.style.display = 'block'
+    const rightClosed =
+      heldRightProp && heldRightProp.isCan && !heldRightProp.opened
+    const leftClosed = heldLeftProp && heldLeftProp.isCan && !heldLeftProp.opened
+    openHint.style.display = rightClosed || leftClosed ? 'block' : 'none'
+  }
+
+  const attachToHand = (prop, hand) => {
+    prop.held = true
+    prop.velocity.set(0, 0, 0)
+    prop.angular.set(0, 0, 0)
+    prop.mesh.position.set(0, 0, 0)
+    prop.mesh.rotation.set(0, 0, 0)
+    if (hand === 'right') {
+      holdRight.add(prop.mesh)
+      heldRightProp = prop
     } else {
-      actionHint.style.display = 'none'
+      holdLeft.add(prop.mesh)
+      heldLeftProp = prop
     }
+  }
+
+  const openCan = (prop) => {
+    if (!prop || !prop.isCan || prop.opened) return
+    prop.opened = true
+    prop.mesh.userData.opened = true
+    const { tab, lid, canHeight } = prop.mesh.userData
+    if (tab) {
+      tab.rotation.x = -Math.PI / 2
+      tab.rotation.y += Math.PI * 0.15
+      tab.position.y += 0.015
+    }
+    if (lid && lid.material) {
+      lid.material.color.set(0xd8d3cd)
+    }
+    const mouth = new THREE.Vector3(0, (canHeight ?? 0.7) / 2, 0)
+    prop.mesh.localToWorld(mouth)
+    createOpenEffect(mouth)
+  }
+
+  const dropFromHand = (prop, hand) => {
+    if (!prop) return
+    const rightDir = new THREE.Vector3(1, 0, 0).applyQuaternion(
+      hero.quaternion
+    )
+    const forwardDir = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      hero.quaternion
+    )
+    const side = hand === 'right' ? 0.25 : -0.25
+    const dropX = hero.position.x + forwardDir.x * 0.6 + rightDir.x * side
+    const dropZ = hero.position.z + forwardDir.z * 0.6 + rightDir.z * side
+
+    if (hand === 'right') {
+      holdRight.remove(prop.mesh)
+      heldRightProp = null
+    } else {
+      holdLeft.remove(prop.mesh)
+      heldLeftProp = null
+    }
+
+    scene.add(prop.mesh)
+    placeOnSurface(prop.mesh, dropX, dropZ, propGroundEpsilon)
+    prop.velocity.set(forwardDir.x * 0.2, 0.2, forwardDir.z * 0.2)
+    prop.angular.set(
+      (Math.random() - 0.5) * 1.2,
+      (Math.random() - 0.5) * 1.2,
+      (Math.random() - 0.5) * 1.2
+    )
+    prop.held = false
+    prop.cooldown = 0.5
   }
 
   const handleKeyDown = (event) => {
     const key = event.key.toLowerCase()
     const code = event.code
-    if ((key === 'l' || code === 'KeyL') && activeProp && !heldProp) {
-      heldProp = activeProp
-      heldProp.held = true
-      heldProp.velocity.set(0, 0, 0)
-      heldProp.angular.set(0, 0, 0)
-      heldProp.mesh.position.set(0, 0, 0)
-      heldProp.mesh.rotation.set(0, 0, 0)
-      holdAnchor.add(heldProp.mesh)
+    if ((key === 'l' || code === 'KeyL') && activeProp) {
+      if (!heldRightProp) {
+        attachToHand(activeProp, 'right')
+      } else if (!heldLeftProp) {
+        attachToHand(activeProp, 'left')
+      } else {
+        return
+      }
       activeProp = null
       actionHint.style.display = 'none'
     }
-    if ((key === 'k' || code === 'KeyK') && heldProp) {
-      const dropDir = new THREE.Vector3(0, 0, 1).applyQuaternion(
-        hero.quaternion
-      )
-      const dropX = hero.position.x + dropDir.x * 0.6
-      const dropZ = hero.position.z + dropDir.z * 0.6
-
-      holdAnchor.remove(heldProp.mesh)
-      scene.add(heldProp.mesh)
-      placeOnSurface(heldProp.mesh, dropX, dropZ, propGroundEpsilon)
-      heldProp.velocity.set(dropDir.x * 0.2, 0.2, dropDir.z * 0.2)
-      heldProp.angular.set(
-        (Math.random() - 0.5) * 1.2,
-        (Math.random() - 0.5) * 1.2,
-        (Math.random() - 0.5) * 1.2
-      )
-      heldProp.held = false
-      heldProp.cooldown = 0.5
-      heldProp = null
+    if (key === 'k' || code === 'KeyK') {
+      if (heldRightProp) {
+        dropFromHand(heldRightProp, 'right')
+      } else if (heldLeftProp) {
+        dropFromHand(heldLeftProp, 'left')
+      }
+    }
+    if (key === 'o' || code === 'KeyO') {
+      if (heldRightProp) {
+        openCan(heldRightProp)
+      }
+      if (heldLeftProp) {
+        openCan(heldLeftProp)
+      }
     }
   }
 

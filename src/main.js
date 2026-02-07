@@ -11,6 +11,7 @@ const { scene, camera, renderer, controls } = createScene(app)
 const {
   group: shore,
   getGroundHeightAt,
+  getRoadMaskAt,
   bounds,
   shoreZ,
   water,
@@ -96,7 +97,14 @@ const swanSystem = createSwanSystem(
   waterDepth
 )
 
-const forest = createForest({ bounds, shoreZ, picnicZ, getGroundHeightAt })
+const forest = createForest({
+  bounds,
+  shoreZ,
+  picnicZ,
+  getGroundHeightAt,
+  getRoadMaskAt,
+  blanketPosition: { x: 1.2, y: 0.2346605718, z: -0.3 },
+})
 scene.add(forest)
 
 const keys = new Set()
@@ -121,11 +129,12 @@ window.addEventListener('keydown', onKeyDown)
 window.addEventListener('keyup', onKeyUp)
 
 const heroSpeed = 1.1
+const heroTurnSpeed = 8
 const worldUp = new THREE.Vector3(0, 1, 0)
 const move = new THREE.Vector3()
 const forward = new THREE.Vector3()
 const right = new THREE.Vector3()
-const facing = new THREE.Vector3()
+const targetQuat = new THREE.Quaternion()
 const deltaHero = new THREE.Vector3()
 
 const updateHero = (delta) => {
@@ -166,8 +175,10 @@ const updateHero = (delta) => {
     )
 
     hero.position.y = getGroundHeightAt(hero.position.x, hero.position.z)
-    facing.copy(hero.position).add(move)
-    hero.lookAt(facing.x, hero.position.y, facing.z)
+    const targetAngle = Math.atan2(move.x, move.z)
+    targetQuat.setFromAxisAngle(worldUp, targetAngle)
+    const turnAlpha = 1 - Math.exp(-heroTurnSpeed * delta)
+    hero.quaternion.slerp(targetQuat, turnAlpha)
   }
 }
 

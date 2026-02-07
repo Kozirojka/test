@@ -49,6 +49,7 @@ export const createShore = () => {
   }
 
   const getGroundHeightAt = (x, z) => getTerrainSample(x, z).height
+  const getRoadMaskAt = (x, z) => getTerrainSample(x, z).roadMask
 
   const groundGeometry = new THREE.PlaneGeometry(
     groundWidth,
@@ -60,7 +61,7 @@ export const createShore = () => {
   const groundPositions = groundGeometry.attributes.position
   const groundColors = new Float32Array(groundPositions.count * 3)
   const grassColor = new THREE.Color(0x6bb86a)
-  const dirtColor = new THREE.Color(0xb38b5b)
+  const dirtColor = new THREE.Color(0xbda58a)
   const mixedColor = new THREE.Color()
   for (let i = 0; i < groundPositions.count; i += 1) {
     const x = groundPositions.getX(i)
@@ -135,13 +136,19 @@ export const createShore = () => {
     shoreZ,
     getTerrainSample,
   })
+  const roadTwigs = createRoadTwigs({
+    bounds,
+    shoreZ,
+    getTerrainSample,
+  })
 
   const group = new THREE.Group()
-  group.add(water, waterWire, ground, reeds, roadStones)
+  group.add(water, waterWire, ground, reeds, roadStones, roadTwigs)
   return {
     group,
     ground,
     getGroundHeightAt,
+    getRoadMaskAt,
     bounds,
     shoreZ,
     water,
@@ -302,7 +309,15 @@ export const createSwanSystem = (
   return { swans, updateSwans }
 }
 
-export const createForest = ({ bounds, shoreZ, picnicZ, getGroundHeightAt }) => {
+export const createForest = ({
+  bounds,
+  shoreZ,
+  picnicZ,
+  getGroundHeightAt,
+  getRoadMaskAt,
+  blanketPosition,
+  blanketRadius = 0.9,
+}) => {
   const group = new THREE.Group()
   const treeCount = 16
   const bushCount = 20
@@ -340,6 +355,9 @@ export const createForest = ({ bounds, shoreZ, picnicZ, getGroundHeightAt }) => 
 
   const dummy = new THREE.Object3D()
   const picnicCenter = new THREE.Vector2(0, picnicZ)
+  const blanketCenter = blanketPosition
+    ? new THREE.Vector2(blanketPosition.x, blanketPosition.z)
+    : null
   let placed = 0
   let attempts = 0
 
@@ -349,7 +367,10 @@ export const createForest = ({ bounds, shoreZ, picnicZ, getGroundHeightAt }) => 
     const z = randRange(shoreZ + 1.6, bounds.maxZ)
     const dist = picnicCenter.distanceTo(new THREE.Vector2(x, z))
     if (dist < 1.6) continue
+    if (blanketCenter && blanketCenter.distanceTo(new THREE.Vector2(x, z)) < blanketRadius)
+      continue
 
+    if (getRoadMaskAt && getRoadMaskAt(x, z) > 0.35) continue
     const y = getGroundHeightAt(x, z)
     const scale = randRange(0.85, 1.25)
 
@@ -391,7 +412,10 @@ export const createForest = ({ bounds, shoreZ, picnicZ, getGroundHeightAt }) => 
     const z = randRange(shoreZ + 1.2, bounds.maxZ)
     const dist = picnicCenter.distanceTo(new THREE.Vector2(x, z))
     if (dist < 1.1) continue
+    if (blanketCenter && blanketCenter.distanceTo(new THREE.Vector2(x, z)) < blanketRadius)
+      continue
 
+    if (getRoadMaskAt && getRoadMaskAt(x, z) > 0.35) continue
     const y = getGroundHeightAt(x, z)
     const scale = randRange(0.7, 1.3)
 
@@ -480,7 +504,7 @@ const createReeds = ({ bounds, shoreZ, water, waterDepth, getGroundHeightAt }) =
 
 const createRoadStones = ({ bounds, shoreZ, getTerrainSample }) => {
   const group = new THREE.Group()
-  const stoneCount = 140
+  const stoneCount = 80
 
   const rand = (() => {
     let seed = 903721
@@ -530,5 +554,69 @@ const createRoadStones = ({ bounds, shoreZ, getTerrainSample }) => {
 
   stones.instanceMatrix.needsUpdate = true
   group.add(stones)
+  return group
+}
+
+const createRoadTwigs = ({ bounds, shoreZ, getTerrainSample }) => {
+  const group = new THREE.Group()
+  const twigCount = 25
+
+  const rand = (() => {
+    let seed = 712349
+    return () => {
+      seed |= 0
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  })()
+
+  const randRange = (min, max) => min + (max - min) * rand()
+
+  const twigGeometryA = new THREE.CylinderGeometry(0.01, 0.012, 0.18, 5)
+  const twigGeometryB = new THREE.CylinderGeometry(0.006, 0.018, 0.22, 5)
+  const twigMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8a6a4a,
+    roughness: 0.95,
+  })
+  const twigCountA = Math.round(twigCount * 0.55)
+  const twigCountB = twigCount - twigCountA
+  const twigsA = new THREE.InstancedMesh(twigGeometryA, twigMaterial, twigCountA)
+  const twigsB = new THREE.InstancedMesh(twigGeometryB, twigMaterial, twigCountB)
+  const dummy = new THREE.Object3D()
+
+  let placed = 0
+  let attempts = 0
+  const maxAttempts = twigCount * 12
+
+  while (placed < twigCount && attempts < maxAttempts) {
+    attempts += 1
+    const x = randRange(bounds.minX, bounds.maxX)
+    const z = randRange(shoreZ + 0.5, bounds.maxZ)
+    const sample = getTerrainSample(x, z)
+    if (sample.roadMask < 0.55) continue
+
+    const y = sample.height + 0.005
+    const scale = randRange(0.6, 1.2)
+    dummy.position.set(x, y, z)
+    dummy.scale.set(scale, scale * 0.7, scale)
+    dummy.rotation.set(
+      Math.PI / 2 + randRange(-0.08, 0.08),
+      randRange(0, Math.PI * 2),
+      randRange(-0.08, 0.08)
+    )
+    dummy.updateMatrix()
+    if (placed < twigCountA) {
+      twigsA.setMatrixAt(placed, dummy.matrix)
+    } else {
+      twigsB.setMatrixAt(placed - twigCountA, dummy.matrix)
+    }
+    placed += 1
+  }
+
+  twigsA.instanceMatrix.needsUpdate = true
+  twigsB.instanceMatrix.needsUpdate = true
+  group.add(twigsA, twigsB)
   return group
 }
