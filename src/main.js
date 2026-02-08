@@ -1176,25 +1176,104 @@ const propSystem = createPropSystem({
   camera,
 })
 
-const giftBaseHeight = 1.2
-const giftMaterial = new THREE.MeshBasicMaterial({
-  transparent: false,
-  depthWrite: true,
-  opacity: 1,
-  side: THREE.DoubleSide,
-})
-const giftPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), giftMaterial)
+const bookHeight = 1.5
+const bookWidth = 2.2
+const pageWidth = bookWidth / 2
+const pageMargin = 0.08
+const pageInnerWidth = pageWidth - pageMargin
+const pageInnerHeight = bookHeight - pageMargin * 1.2
+
+const giftPlane = new THREE.Group()
 giftPlane.visible = false
 scene.add(giftPlane)
+
+const bookCoverMaterial = new THREE.MeshBasicMaterial({
+  color: 0xf6efe6,
+  side: THREE.DoubleSide,
+})
+const pageMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  side: THREE.DoubleSide,
+})
+
+const bookCover = new THREE.Mesh(
+  new THREE.PlaneGeometry(bookWidth, bookHeight),
+  bookCoverMaterial
+)
+bookCover.position.z = -0.01
+giftPlane.add(bookCover)
+
+  const leftPage = new THREE.Mesh(
+    new THREE.PlaneGeometry(pageWidth, bookHeight),
+    pageMaterial
+  )
+  leftPage.position.x = -pageWidth / 2
+  giftPlane.add(leftPage)
+
+  const photoBaseMaterial = new THREE.MeshBasicMaterial({
+    transparent: false,
+    depthWrite: true,
+    opacity: 1,
+    side: THREE.DoubleSide,
+  })
+  const leftPhotoMaterial = photoBaseMaterial.clone()
+  const leftPhoto = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    leftPhotoMaterial
+  )
+  leftPhoto.position.set(0, 0, 0.012)
+  leftPhoto.visible = false
+  leftPage.add(leftPhoto)
+
+const rightPageGroup = new THREE.Group()
+rightPageGroup.position.x = pageWidth / 2
+  const rightPage = new THREE.Mesh(
+    new THREE.PlaneGeometry(pageWidth, bookHeight),
+    pageMaterial
+  )
+  rightPageGroup.add(rightPage)
+  const rightPhotoMaterial = photoBaseMaterial.clone()
+  const rightPhoto = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    rightPhotoMaterial
+  )
+rightPhoto.position.z = 0.012
+rightPageGroup.add(rightPhoto)
+giftPlane.add(rightPageGroup)
+
+const flipPivot = new THREE.Group()
+flipPivot.position.x = 0
+const flipPageGroup = new THREE.Group()
+flipPageGroup.position.x = pageWidth / 2
+const flipPage = new THREE.Mesh(
+  new THREE.PlaneGeometry(pageWidth, bookHeight),
+  pageMaterial
+)
+flipPageGroup.add(flipPage)
+  const flipPhotoMaterial = photoBaseMaterial.clone()
+const flipPhoto = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flipPhotoMaterial)
+flipPhoto.position.z = 0.012
+flipPageGroup.add(flipPhoto)
+flipPivot.add(flipPageGroup)
+flipPivot.visible = false
+giftPlane.add(flipPivot)
+
 const giftPaginationAnchor = new THREE.Vector3()
 const giftPaginationScreen = new THREE.Vector3()
 const giftCaptionAnchor = new THREE.Vector3()
 const giftCaptionScreen = new THREE.Vector3()
-const updateGiftScale = (texture) => {
+
+const fitPhotoToPage = (mesh, texture) => {
   const image = texture?.image
   if (!image || !image.width || !image.height) return
   const aspect = image.width / image.height
-  giftPlane.scale.set(giftBaseHeight * aspect, giftBaseHeight, 1)
+  let width = pageInnerWidth
+  let height = width / aspect
+  if (height > pageInnerHeight) {
+    height = pageInnerHeight
+    width = height * aspect
+  }
+  mesh.scale.set(width, height, 1)
 }
 const giftSources = {}
 const giftCaptions = {}
@@ -1209,11 +1288,21 @@ for (const album of heartAlbums) {
 }
 const giftTextures = {}
 const giftLoader = new THREE.TextureLoader()
+const refreshPhotoForTexture = (texture) => {
+  if (rightPhotoMaterial.map === texture) {
+    fitPhotoToPage(rightPhoto, texture)
+  }
+  if (leftPhotoMaterial.map === texture) {
+    fitPhotoToPage(leftPhoto, texture)
+  }
+  if (flipPhotoMaterial.map === texture) {
+    fitPhotoToPage(flipPhoto, texture)
+  }
+}
+
 const loadGiftTexture = (giftId, src) => {
   const texture = giftLoader.load(src, () => {
-    if (giftMaterial.map === texture) {
-      updateGiftScale(texture)
-    }
+    refreshPhotoForTexture(texture)
   })
   texture.colorSpace = THREE.SRGBColorSpace
   giftTextures[giftId] = texture
@@ -1224,24 +1313,137 @@ for (const [giftId, src] of Object.entries(giftSources)) {
 }
 let activeGiftId = null
 let activeAlbumId = heartAlbums[0]?.id ?? null
-const setGiftTexture = (giftId) => {
+let activeSpreadIndex = 0
+const getAlbumIds = () =>
+  activeAlbumId && albumPhotoIds[activeAlbumId]
+    ? albumPhotoIds[activeAlbumId]
+    : []
+const getSpreadList = (albumIds) => {
+  const spreads = []
+  for (let i = 0; i < albumIds.length; i += 2) {
+    spreads.push({
+      left: albumIds[i],
+      right: albumIds[i + 1] ?? null,
+    })
+  }
+  return spreads
+}
+const getSpreadIndexForPhoto = (albumIds, photoId) => {
+  const idx = albumIds.indexOf(photoId)
+  const safe = idx >= 0 ? idx : 0
+  return Math.floor(safe / 2)
+}
+const applyGiftTexture = (giftId, targetMesh, targetMaterial, setActive = true) => {
   const albumFallback =
     activeAlbumId && albumPhotoIds[activeAlbumId]?.length
       ? albumPhotoIds[activeAlbumId][0]
       : Object.keys(giftSources)[0]
   const chosenId = giftTextures[giftId] ? giftId : albumFallback
   const texture = giftTextures[chosenId]
-  if (giftMaterial.map !== texture) {
-    giftMaterial.map = texture
-    giftMaterial.needsUpdate = true
-    updateGiftScale(texture)
+  if (targetMaterial.map !== texture) {
+    targetMaterial.map = texture
+    targetMaterial.needsUpdate = true
+    fitPhotoToPage(targetMesh, texture)
   }
-  activeGiftId = chosenId
+  if (setActive) {
+    activeGiftId = chosenId
+  }
+  return chosenId
+}
+const setGiftTexture = (giftId) =>
+  applyGiftTexture(giftId, rightPhoto, rightPhotoMaterial, true)
+const setFlipTexture = (giftId) =>
+  applyGiftTexture(giftId, flipPhoto, flipPhotoMaterial, false)
+
+const setLeftTexture = (giftId) => {
+  if (!giftId) {
+    leftPhoto.visible = false
+    leftPhotoMaterial.map = null
+    leftPhotoMaterial.needsUpdate = true
+    return
+  }
+  leftPhoto.visible = true
+  applyGiftTexture(giftId, leftPhoto, leftPhotoMaterial, false)
+}
+
+const setRightTexture = (giftId, setActive = true) => {
+  if (!giftId) {
+    rightPhoto.visible = false
+    rightPhotoMaterial.map = null
+    rightPhotoMaterial.needsUpdate = true
+    if (setActive) {
+      activeGiftId = null
+    }
+    return null
+  }
+  rightPhoto.visible = true
+  return applyGiftTexture(giftId, rightPhoto, rightPhotoMaterial, setActive)
+}
+
+const setBookPagesForSpread = (spreadIndex) => {
+  const albumIds = getAlbumIds()
+  const spreads = getSpreadList(albumIds)
+  if (!spreads.length) return
+  const clamped = THREE.MathUtils.clamp(spreadIndex, 0, spreads.length - 1)
+  const spread = spreads[clamped]
+  activeSpreadIndex = clamped
+  setLeftTexture(spread.left ?? null)
+  const activeId = spread.right ?? spread.left
+  setRightTexture(spread.right ?? null, false)
+  if (activeId) {
+    activeGiftId = activeId
+  }
+}
+
+const setBookPagesForPhoto = (currentId) => {
+  const albumIds = getAlbumIds()
+  if (!albumIds.length) return
+  const spreadIndex = getSpreadIndexForPhoto(albumIds, currentId)
+  setBookPagesForSpread(spreadIndex)
+}
+
+const bookFlip = {
+  active: false,
+  t: 0,
+  duration: 0.7,
+  nextSpreadIndex: null,
+  swapped: false,
+  nextLeftId: null,
+}
+
+const startBookFlip = (nextSpreadIndex) => {
+  const albumIds = getAlbumIds()
+  const spreads = getSpreadList(albumIds)
+  if (!spreads.length) return
+  const clamped = THREE.MathUtils.clamp(
+    nextSpreadIndex,
+    0,
+    spreads.length - 1
+  )
+  if (clamped === activeSpreadIndex) {
+    setBookPagesForSpread(clamped)
+    return
+  }
+  if (bookFlip.active) return
+  const currentSpread = spreads[activeSpreadIndex] ?? spreads[clamped]
+  const currentRight = currentSpread.right ?? currentSpread.left
+  setFlipTexture(currentRight)
+  bookFlip.active = true
+  bookFlip.t = 0
+  bookFlip.nextSpreadIndex = clamped
+  bookFlip.nextLeftId = spreads[clamped]?.left ?? null
+  bookFlip.swapped = false
+  flipPivot.rotation.y = 0
+  flipPivot.visible = true
+  rightPageGroup.visible = false
 }
 if (activeAlbumId && albumPhotoIds[activeAlbumId]?.length) {
-  setGiftTexture(albumPhotoIds[activeAlbumId][0])
+  setBookPagesForSpread(0)
 } else {
-  setGiftTexture(Object.keys(giftSources)[0])
+  const fallback = Object.keys(giftSources)[0]
+  if (fallback) {
+    setBookPagesForPhoto(fallback)
+  }
 }
 
 const getUniqueGiftIds = (entries) => {
@@ -1255,19 +1457,22 @@ const getUniqueGiftIds = (entries) => {
   return result
 }
 
-const syncGiftPagination = (giftIds) => {
-  const sameLength = giftPaginationState.ids.length === giftIds.length
+const syncGiftPagination = (spreads) => {
+  const keys = spreads.map((spread) => `${spread.left}|${spread.right ?? ''}`)
+  const sameLength = giftPaginationState.ids.length === keys.length
   const sameContent =
     sameLength &&
-    giftPaginationState.ids.every((value, index) => value === giftIds[index])
+    giftPaginationState.ids.every((value, index) => value === keys[index])
   if (sameContent) return
-  giftPaginationState.ids = giftIds.slice()
+  giftPaginationState.ids = keys.slice()
+  giftPaginationState.spreads = spreads
   giftPagination.innerHTML = ''
-  giftIds.forEach((giftId, index) => {
+  spreads.forEach((spread, index) => {
     const dot = document.createElement('button')
     dot.type = 'button'
     dot.dataset.index = `${index}`
-    dot.dataset.giftId = giftId
+    dot.dataset.leftId = spread.left ?? ''
+    dot.dataset.rightId = spread.right ?? ''
     dot.style.width = '10px'
     dot.style.height = '10px'
     dot.style.borderRadius = '50%'
@@ -1284,7 +1489,7 @@ const syncGiftPagination = (giftIds) => {
 const updateGiftPaginationActive = () => {
   const dots = giftPagination.querySelectorAll('button[data-index]')
   dots.forEach((dot) => {
-    const isActive = dot.dataset.giftId === activeGiftId
+    const isActive = Number(dot.dataset.index) === activeSpreadIndex
     dot.style.background = isActive
       ? 'rgba(255,255,255,0.9)'
       : 'rgba(255,255,255,0.35)'
@@ -1296,10 +1501,15 @@ giftPagination.addEventListener('click', (event) => {
   const target = event.target.closest('button[data-index]')
   if (!target) return
   const index = Number(target.dataset.index)
-  const giftId = giftPaginationState.ids[index]
-  if (!giftId) return
-  setGiftTexture(giftId)
-  giftPlane.visible = true
+  const spreads = giftPaginationState.spreads ?? []
+  const spread = spreads[index]
+  if (!spread) return
+  if (!giftPlane.visible) {
+    setBookPagesForSpread(index)
+    giftPlane.visible = true
+  } else {
+    startBookFlip(index)
+  }
 })
 
 const swanSystem = createSwanSystem(
@@ -1399,15 +1609,15 @@ const onKeyDown = (event) => {
       )
       if (heldAlbums.length > 0 && !heldAlbums.includes(activeAlbumId)) {
         activeAlbumId = heldAlbums[0]
+        activeSpreadIndex = 0
       }
       const albumIds = activeAlbumId ? albumPhotoIds[activeAlbumId] ?? [] : []
       if (!giftPlane.visible) {
-        const giftId =
-          activeGiftId && albumIds.includes(activeGiftId)
-            ? activeGiftId
-            : albumIds[0]
-        if (giftId) {
-          setGiftTexture(giftId)
+        if (albumIds.length) {
+          if (activeGiftId && albumIds.includes(activeGiftId)) {
+            activeSpreadIndex = getSpreadIndexForPhoto(albumIds, activeGiftId)
+          }
+          setBookPagesForSpread(activeSpreadIndex)
           giftPlane.visible = true
         }
       } else {
@@ -1709,11 +1919,11 @@ const animate = () => {
   )
   if (heldAlbums.length > 0 && !heldAlbums.includes(activeAlbumId)) {
     activeAlbumId = heldAlbums[0]
+    activeSpreadIndex = 0
   }
-  const heldGiftIds =
-    heldHearts.length > 0 && activeAlbumId
-      ? albumPhotoIds[activeAlbumId] ?? []
-      : []
+  const albumIds = activeAlbumId ? albumPhotoIds[activeAlbumId] ?? [] : []
+  const spreads = getSpreadList(albumIds)
+  const heldGiftIds = heldHearts.length > 0 ? spreads : []
   if (heldHearts.length === 0 && giftPlane.visible) {
     giftPlane.visible = false
     activeGiftId = null
@@ -1726,9 +1936,16 @@ const animate = () => {
     giftHint.style.display = heldHearts.length > 0 ? 'block' : 'none'
   }
   if (giftPlane.visible) {
-    if (heldGiftIds.length > 0) {
-      if (!heldGiftIds.includes(activeGiftId)) {
-        setGiftTexture(heldGiftIds[0])
+    if (spreads.length > 0) {
+      const currentIndex = spreads.findIndex(
+        (spread) => spread.left === activeGiftId || spread.right === activeGiftId
+      )
+      if (currentIndex === -1) {
+        activeSpreadIndex = 0
+        setBookPagesForSpread(activeSpreadIndex)
+      } else if (currentIndex !== activeSpreadIndex) {
+        activeSpreadIndex = currentIndex
+        setBookPagesForSpread(activeSpreadIndex)
       }
     }
     giftPlane.position.set(
@@ -1737,6 +1954,34 @@ const animate = () => {
       (waterCenter.y + heroMidpoint.z) * 0.5
     )
     giftPlane.lookAt(camera.position)
+  }
+
+  if (!giftPlane.visible) {
+    bookFlip.active = false
+    flipPivot.visible = false
+    rightPageGroup.visible = true
+  } else if (bookFlip.active) {
+    bookFlip.t = Math.min(bookFlip.duration, bookFlip.t + delta)
+    const t = bookFlip.t / bookFlip.duration
+    const eased = t * t * (3 - 2 * t)
+    flipPivot.rotation.y = -Math.PI * eased
+    if (!bookFlip.swapped && t > 0.5) {
+      if (bookFlip.nextLeftId) {
+        setFlipTexture(bookFlip.nextLeftId)
+      }
+      bookFlip.swapped = true
+    }
+    if (t >= 1) {
+      bookFlip.active = false
+      flipPivot.visible = false
+      rightPageGroup.visible = true
+      if (bookFlip.nextSpreadIndex !== null) {
+        setBookPagesForSpread(bookFlip.nextSpreadIndex)
+      }
+      bookFlip.nextSpreadIndex = null
+      bookFlip.nextLeftId = null
+      flipPivot.rotation.y = 0
+    }
   }
 
   if (giftPlane.visible && heldGiftIds.length > 1) {
