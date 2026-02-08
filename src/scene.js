@@ -15,8 +15,8 @@ export const createScene = (app) => {
     0.1,
     100
   )
-  camera.position.set(0, 2.2, 4.2)
-  camera.lookAt(0, 0.2, 0)
+  camera.position.set(0, 3.6, 4.2)
+  camera.lookAt(0, 0.5, 0)
 
   const renderer = new THREE.WebGLRenderer({ antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -26,12 +26,21 @@ export const createScene = (app) => {
   const controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.08
-  controls.target.set(0, 0.2, 0)
+  controls.target.set(0, 0.5, 0)
   controls.maxPolarAngle = Math.PI * 0.48
   controls.minDistance = 2
   controls.maxDistance = 7
   controls.enabled = true
-  controls.enablePan = false
+  controls.enablePan = true
+  controls.screenSpacePanning = true
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN,
+  }
+  renderer.domElement.addEventListener('contextmenu', (event) =>
+    event.preventDefault()
+  )
 
   const ambientLight = new THREE.AmbientLight(0xffe6c8, 0.35)
   const hemisphereLight = new THREE.HemisphereLight(0xffe1b8, 0x5b4a3b, 0.75)

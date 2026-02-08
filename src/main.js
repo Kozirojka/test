@@ -631,6 +631,38 @@ scene.add(heroTwo)
 
 controls.target.copy(hero.position)
 
+const blanketAnchor = new THREE.Vector3(1.2, 0, -0.3)
+const seatLeft = new THREE.Vector3()
+const seatRight = new THREE.Vector3()
+const sitConfig = {
+  offsetLeft: new THREE.Vector3(-0.28, 0, 0.1),
+  offsetRight: new THREE.Vector3(0.28, 0, -0.1),
+  yOffset: -0.04,
+  radius: 0.7,
+  transition: 0.4,
+}
+const sitState = {
+  p1: {
+    seated: false,
+    transitioning: false,
+    t: 0,
+    start: new THREE.Vector3(),
+  },
+  p2: {
+    seated: false,
+    transitioning: false,
+    t: 0,
+    start: new THREE.Vector3(),
+  },
+}
+const updateSeatPositions = () => {
+  seatLeft.copy(blanketAnchor).add(sitConfig.offsetLeft)
+  seatLeft.y = getSurfaceHeightAt(seatLeft.x, seatLeft.z) + sitConfig.yOffset
+  seatRight.copy(blanketAnchor).add(sitConfig.offsetRight)
+  seatRight.y = getSurfaceHeightAt(seatRight.x, seatRight.z) + sitConfig.yOffset
+}
+updateSeatPositions()
+
 const createKissHeartMesh = () => {
   const heart = new THREE.Shape()
   heart.moveTo(0, 0.25)
@@ -740,6 +772,29 @@ const createDogHint = () => {
   return hint
 }
 const dogHint = createDogHint()
+const createSitHint = (text) => {
+  const hint = document.createElement('div')
+  hint.textContent = text
+  hint.style.position = 'fixed'
+  hint.style.left = '0'
+  hint.style.top = '0'
+  hint.style.transform = 'translate(-50%, -120%)'
+  hint.style.padding = '6px 10px'
+  hint.style.borderRadius = '8px'
+  hint.style.background = 'rgba(16, 18, 24, 0.85)'
+  hint.style.color = '#f7e9ef'
+  hint.style.fontSize = '13px'
+  hint.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+  hint.style.letterSpacing = '0.2px'
+  hint.style.pointerEvents = 'none'
+  hint.style.whiteSpace = 'nowrap'
+  hint.style.display = 'none'
+  hint.style.boxShadow = '0 8px 18px rgba(0,0,0,0.25)'
+  document.body.appendChild(hint)
+  return hint
+}
+const sitHintP1 = createSitHint('Press Q щоб сісти')
+const sitHintP2 = createSitHint('Press I щоб сісти')
 
 const createGiftHint = () => {
   const hint = document.createElement('div')
@@ -1108,6 +1163,21 @@ const edgeQuiz = {
   result: null,
   advanceTimer: 0,
 }
+
+const toggleSit = (heroTarget, state, seatPos) => {
+  if (!heroTarget || !state) return
+  if (state.seated) {
+    state.seated = false
+    state.transitioning = false
+    state.t = 0
+    return
+  }
+  if (heroTarget.position.distanceTo(seatPos) > sitConfig.radius) return
+  state.seated = true
+  state.transitioning = true
+  state.t = 0
+  state.start.copy(heroTarget.position)
+}
 const getEdgeOptionsText = () => {
   const question = edgeQuestions[edgeQuiz.current]
   if (!question) return ''
@@ -1144,6 +1214,14 @@ const onKeyDown = (event) => {
   }
   if (key === 'b' || code === 'KeyB') {
     kissRequested = true
+  }
+  if (key === 'q' || code === 'KeyQ') {
+    updateSeatPositions()
+    toggleSit(hero, sitState.p1, seatLeft)
+  }
+  if (key === 'i' || code === 'KeyI') {
+    updateSeatPositions()
+    toggleSit(heroTwo, sitState.p2, seatRight)
   }
   if (key === 'p' || code === 'KeyP') {
     const heldHearts = propSystem.getHeldHearts
@@ -1257,6 +1335,8 @@ const right = new THREE.Vector3()
 const targetQuat = new THREE.Quaternion()
 const heroMidpoint = new THREE.Vector3()
 const cameraOffset = new THREE.Vector3()
+const cameraPanOffset = new THREE.Vector3()
+const cameraTarget = new THREE.Vector3()
 const tmpVec = new THREE.Vector3()
 const tmpVecB = new THREE.Vector3()
 const heroForward = new THREE.Vector3()
@@ -1335,15 +1415,108 @@ const updateHero = (heroTarget, input, delta) => {
   }
 }
 
+const updateSeatedHero = (heroTarget, state, seatPos, delta) => {
+  if (!heroTarget || !state) return
+  const moveAlpha = Math.min(state.t / sitConfig.transition, 1)
+  if (state.transitioning) {
+    state.t += delta
+    const t = Math.min(state.t / sitConfig.transition, 1)
+    const eased = t * t * (3 - 2 * t)
+    heroTarget.position.lerpVectors(state.start, seatPos, eased)
+    if (t >= 1) {
+      state.transitioning = false
+    }
+  } else {
+    heroTarget.position.copy(seatPos)
+  }
+  if (moveAlpha < 1) {
+    heroTarget.position.y = THREE.MathUtils.lerp(
+      heroTarget.position.y,
+      seatPos.y,
+      moveAlpha
+    )
+  }
+  const lookTargetX = waterCenter.x
+  const lookTargetZ = waterCenter.y
+  const targetAngle = Math.atan2(
+    lookTargetX - heroTarget.position.x,
+    lookTargetZ - heroTarget.position.z
+  )
+  targetQuat.setFromAxisAngle(worldUp, targetAngle)
+  const turnAlpha = 1 - Math.exp(-heroTurnSpeed * delta)
+  heroTarget.quaternion.slerp(targetQuat, turnAlpha)
+
+  const limbTargets = heroTarget.userData?.limbs
+  if (limbTargets) {
+    limbTargets.leftArm.userData.swingX = 0
+    limbTargets.rightArm.userData.swingX = 0
+    limbTargets.leftArm.userData.hugX = 0
+    limbTargets.rightArm.userData.hugX = 0
+    limbTargets.leftArm.userData.hugZ = 0
+    limbTargets.rightArm.userData.hugZ = 0
+  }
+}
+
+const applySeatedPose = (heroTarget) => {
+  const limbs = heroTarget?.userData?.limbs
+  if (!limbs) return
+  const ensureBase = (limb) => {
+    if (!limb.userData.basePos) {
+      limb.userData.basePos = limb.position.clone()
+    }
+  }
+  ensureBase(limbs.leftLeg)
+  ensureBase(limbs.rightLeg)
+  ensureBase(limbs.leftArm)
+  ensureBase(limbs.rightArm)
+
+  limbs.leftLeg.rotation.x = -1.05
+  limbs.rightLeg.rotation.x = -1.05
+  limbs.leftLeg.rotation.z = 0.06
+  limbs.rightLeg.rotation.z = -0.06
+  limbs.leftLeg.position.copy(limbs.leftLeg.userData.basePos)
+  limbs.rightLeg.position.copy(limbs.rightLeg.userData.basePos)
+  limbs.leftLeg.position.y -= 0.04
+  limbs.rightLeg.position.y -= 0.04
+  limbs.leftLeg.position.z += 0.12
+  limbs.rightLeg.position.z += 0.12
+
+  limbs.leftArm.rotation.x = 0.25
+  limbs.rightArm.rotation.x = 0.25
+  limbs.leftArm.rotation.z = 0.06
+  limbs.rightArm.rotation.z = -0.06
+  limbs.leftArm.position.copy(limbs.leftArm.userData.basePos)
+  limbs.rightArm.position.copy(limbs.rightArm.userData.basePos)
+  limbs.leftArm.position.z += 0.06
+  limbs.rightArm.position.z += 0.06
+  limbs.leftArm.position.y -= 0.01
+  limbs.rightArm.position.y -= 0.01
+}
+
+const resetSeatedPose = (heroTarget) => {
+  const limbs = heroTarget?.userData?.limbs
+  if (!limbs) return
+  const resetLimb = (limb) => {
+    if (limb?.userData?.basePos) {
+      limb.position.copy(limb.userData.basePos)
+    }
+  }
+  resetLimb(limbs.leftLeg)
+  resetLimb(limbs.rightLeg)
+  resetLimb(limbs.leftArm)
+  resetLimb(limbs.rightArm)
+}
+
 const updateSharedCamera = () => {
   heroMidpoint.copy(hero.position).add(heroTwo.position).multiplyScalar(0.5)
+  cameraTarget.copy(heroMidpoint).add(cameraPanOffset)
   cameraOffset.copy(camera.position).sub(controls.target)
   const heroDistance = hero.position.distanceTo(heroTwo.position)
   const desiredDistance = THREE.MathUtils.clamp(3 + heroDistance * 0.8, 3, 7)
   const currentDistance = cameraOffset.length() || 1
   cameraOffset.multiplyScalar(desiredDistance / currentDistance)
-  camera.position.copy(heroMidpoint).add(cameraOffset)
-  controls.target.copy(heroMidpoint)
+  camera.position.copy(cameraTarget).add(cameraOffset)
+  controls.target.copy(cameraTarget)
 }
 
 const areFacingEachOther = () => {
@@ -1361,6 +1534,7 @@ const animate = () => {
   requestAnimationFrame(animate)
   const delta = clock.getDelta()
   const time = clock.getElapsedTime()
+  updateSeatPositions()
 
   const heldHearts = propSystem.getHeldHearts
     ? propSystem.getHeldHearts()
@@ -1386,9 +1560,9 @@ const animate = () => {
       }
     }
     giftPlane.position.set(
-      waterCenter.x,
-      water.position.y + 1.8 + Math.sin(time * 1.2) * 0.04,
-      waterCenter.y
+      (waterCenter.x + heroMidpoint.x) * 0.5,
+      water.position.y + 1.7 + Math.sin(time * 1.2) * 0.04,
+      (waterCenter.y + heroMidpoint.z) * 0.5
     )
     giftPlane.lookAt(camera.position)
   }
@@ -1399,7 +1573,11 @@ const animate = () => {
 
   const heroDistance = hero.position.distanceTo(heroTwo.position)
   const canKiss =
-    heroDistance < 0.6 && areFacingEachOther() && kissState.cooldown <= 0
+    heroDistance < 0.6 &&
+    areFacingEachOther() &&
+    kissState.cooldown <= 0 &&
+    !sitState.p1.seated &&
+    !sitState.p2.seated
 
   if (kissRequested && canKiss && !kissState.active) {
     kissState.active = true
@@ -1462,32 +1640,50 @@ const animate = () => {
       hero.userData.limbs.rightArm.userData.hugZ = -hugZ
     }
   } else {
-    updateHero(
-      hero,
-      {
-        forward: ['w', 'KeyW'],
-        backward: ['s', 'KeyS'],
-        left: ['a', 'KeyA'],
-        right: ['d', 'KeyD'],
-      },
-      delta
-    )
-    updateHero(
-      heroTwo,
-      {
-        forward: ['arrowup'],
-        backward: ['arrowdown'],
-        left: ['arrowleft'],
-        right: ['arrowright'],
-      },
-      delta
-    )
+    if (sitState.p1.seated) {
+      updateSeatedHero(hero, sitState.p1, seatLeft, delta)
+    } else {
+      updateHero(
+        hero,
+        {
+          forward: ['w', 'KeyW'],
+          backward: ['s', 'KeyS'],
+          left: ['a', 'KeyA'],
+          right: ['d', 'KeyD'],
+        },
+        delta
+      )
+      resetSeatedPose(hero)
+    }
+    if (sitState.p2.seated) {
+      updateSeatedHero(heroTwo, sitState.p2, seatRight, delta)
+    } else {
+      updateHero(
+        heroTwo,
+        {
+          forward: ['arrowup'],
+          backward: ['arrowdown'],
+          left: ['arrowleft'],
+          right: ['arrowright'],
+        },
+        delta
+      )
+      resetSeatedPose(heroTwo)
+    }
   }
   updateSharedCamera()
   updateWater(water, time)
   swanSystem.updateSwans(time, delta)
   propSystem.updateProps(delta)
   propSystem.updateActionHint()
+  if (!kissState.active) {
+    if (sitState.p1.seated) {
+      applySeatedPose(hero)
+    }
+    if (sitState.p2.seated) {
+      applySeatedPose(heroTwo)
+    }
+  }
   const blanketCenter = tmpVec.set(1.2, 0, -0.3)
   const heroDist = hero.position.distanceTo(blanketCenter)
   const heroTwoDist = heroTwo.position.distanceTo(blanketCenter)
@@ -1685,6 +1881,42 @@ const animate = () => {
     doorHint.style.display = 'none'
   }
 
+  if (sitHintP1) {
+    const nearSeat = hero.position.distanceTo(seatLeft) < sitConfig.radius + 0.2
+    if (!sitState.p1.seated && nearSeat && !kissState.active) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      const screen = seatLeft.clone()
+      screen.y += 0.2
+      screen.project(camera)
+      const screenX = (screen.x * 0.5 + 0.5) * rect.width + rect.left
+      const screenY = (-screen.y * 0.5 + 0.5) * rect.height + rect.top
+      sitHintP1.style.left = `${screenX}px`
+      sitHintP1.style.top = `${screenY}px`
+      sitHintP1.style.display = 'block'
+    } else {
+      sitHintP1.style.display = 'none'
+    }
+  }
+
+  if (sitHintP2 && heroTwo) {
+    const nearSeat = heroTwo.position.distanceTo(seatRight) < sitConfig.radius + 0.2
+    if (!sitState.p2.seated && nearSeat && !kissState.active) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      const screen = seatRight.clone()
+      screen.y += 0.2
+      screen.project(camera)
+      const screenX = (screen.x * 0.5 + 0.5) * rect.width + rect.left
+      const screenY = (-screen.y * 0.5 + 0.5) * rect.height + rect.top
+      sitHintP2.style.left = `${screenX}px`
+      sitHintP2.style.top = `${screenY}px`
+      sitHintP2.style.display = 'block'
+    } else {
+      sitHintP2.style.display = 'none'
+    }
+  } else if (sitHintP2) {
+    sitHintP2.style.display = 'none'
+  }
+
   if (dogHint && expansionUnlocked && expansionArea.dog) {
     const dogPos = new THREE.Vector3()
     expansionArea.dog.getWorldPosition(dogPos)
@@ -1792,6 +2024,7 @@ const animate = () => {
   updateFireworks(delta)
 
   controls.update()
+  cameraPanOffset.copy(controls.target).sub(heroMidpoint)
   renderer.render(scene, camera)
 }
 
