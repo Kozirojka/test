@@ -837,6 +837,28 @@ const createGiftHint = () => {
   return hint
 }
 const giftHint = createGiftHint()
+const createGiftPagination = () => {
+  const container = document.createElement('div')
+  container.style.position = 'fixed'
+  container.style.left = '0'
+  container.style.top = '0'
+  container.style.transform = 'translate(-50%, 0)'
+  container.style.display = 'none'
+  container.style.gap = '8px'
+  container.style.padding = '6px 10px'
+  container.style.borderRadius = '999px'
+  container.style.background = 'rgba(16, 18, 24, 0.65)'
+  container.style.pointerEvents = 'auto'
+  container.style.alignItems = 'center'
+  container.style.justifyContent = 'center'
+  container.style.backdropFilter = 'blur(4px)'
+  container.style.boxShadow = '0 10px 22px rgba(0,0,0,0.2)'
+  container.style.zIndex = '10'
+  document.body.appendChild(container)
+  return container
+}
+const giftPagination = createGiftPagination()
+const giftPaginationState = { ids: [] }
 
 const fireworks = []
 const createFireworkBurst = (origin) => {
@@ -1118,6 +1140,8 @@ const giftMaterial = new THREE.MeshBasicMaterial({
 const giftPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), giftMaterial)
 giftPlane.visible = false
 scene.add(giftPlane)
+const giftPaginationAnchor = new THREE.Vector3()
+const giftPaginationScreen = new THREE.Vector3()
 const updateGiftScale = (texture) => {
   const image = texture?.image
   if (!image || !image.width || !image.height) return
@@ -1157,6 +1181,64 @@ const setGiftTexture = (giftId) => {
   activeGiftId = chosenId
 }
 setGiftTexture('me_and_sia_first_pick')
+
+const getUniqueGiftIds = (entries) => {
+  const result = []
+  const seen = new Set()
+  for (const id of entries) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    result.push(id)
+  }
+  return result
+}
+
+const syncGiftPagination = (giftIds) => {
+  const sameLength = giftPaginationState.ids.length === giftIds.length
+  const sameContent =
+    sameLength &&
+    giftPaginationState.ids.every((value, index) => value === giftIds[index])
+  if (sameContent) return
+  giftPaginationState.ids = giftIds.slice()
+  giftPagination.innerHTML = ''
+  giftIds.forEach((giftId, index) => {
+    const dot = document.createElement('button')
+    dot.type = 'button'
+    dot.dataset.index = `${index}`
+    dot.dataset.giftId = giftId
+    dot.style.width = '10px'
+    dot.style.height = '10px'
+    dot.style.borderRadius = '50%'
+    dot.style.border = '1px solid rgba(255,255,255,0.5)'
+    dot.style.background = 'rgba(255,255,255,0.35)'
+    dot.style.cursor = 'pointer'
+    dot.style.padding = '0'
+    dot.style.outline = 'none'
+    dot.style.boxShadow = '0 2px 4px rgba(0,0,0,0.25)'
+    giftPagination.appendChild(dot)
+  })
+}
+
+const updateGiftPaginationActive = () => {
+  const dots = giftPagination.querySelectorAll('button[data-index]')
+  dots.forEach((dot) => {
+    const isActive = dot.dataset.giftId === activeGiftId
+    dot.style.background = isActive
+      ? 'rgba(255,255,255,0.9)'
+      : 'rgba(255,255,255,0.35)'
+    dot.style.transform = isActive ? 'scale(1.15)' : 'scale(1)'
+  })
+}
+
+giftPagination.addEventListener('click', (event) => {
+  const target = event.target.closest('button[data-index]')
+  if (!target) return
+  const index = Number(target.dataset.index)
+  const giftId = giftPaginationState.ids[index]
+  if (!giftId) return
+  setGiftTexture(giftId)
+  giftPlane.visible = true
+})
 
 const swanSystem = createSwanSystem(
   scene,
@@ -1559,6 +1641,9 @@ const animate = () => {
   const heldHearts = propSystem.getHeldHearts
     ? propSystem.getHeldHearts()
     : []
+  const heldGiftIds = getUniqueGiftIds(
+    heldHearts.map((entry) => entry.prop?.mesh?.userData?.giftId)
+  )
   if (heldHearts.length === 0 && giftPlane.visible) {
     giftPlane.visible = false
     activeGiftId = null
@@ -1571,9 +1656,6 @@ const animate = () => {
     giftHint.style.display = heldHearts.length > 0 ? 'block' : 'none'
   }
   if (giftPlane.visible) {
-    const heldGiftIds = heldHearts.map(
-      (entry) => entry.prop?.mesh?.userData?.giftId
-    )
     if (heldGiftIds.length > 0) {
       if (!heldGiftIds.includes(activeGiftId)) {
         setGiftTexture(heldGiftIds[0])
@@ -1585,6 +1667,24 @@ const animate = () => {
       (waterCenter.y + heroMidpoint.z) * 0.5
     )
     giftPlane.lookAt(camera.position)
+  }
+
+  if (giftPlane.visible && heldGiftIds.length > 1) {
+    syncGiftPagination(heldGiftIds)
+    updateGiftPaginationActive()
+    giftPaginationAnchor.set(0, -0.65, 0)
+    giftPlane.localToWorld(giftPaginationAnchor)
+    giftPaginationScreen.copy(giftPaginationAnchor).project(camera)
+    const rect = renderer.domElement.getBoundingClientRect()
+    const screenX =
+      (giftPaginationScreen.x * 0.5 + 0.5) * rect.width + rect.left
+    const screenY =
+      (-giftPaginationScreen.y * 0.5 + 0.5) * rect.height + rect.top
+    giftPagination.style.left = `${screenX}px`
+    giftPagination.style.top = `${screenY}px`
+    giftPagination.style.display = 'flex'
+  } else {
+    giftPagination.style.display = 'none'
   }
 
   if (kissState.cooldown > 0) {
