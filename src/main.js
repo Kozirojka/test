@@ -4,6 +4,7 @@ import { createScene } from './scene.js'
 import { createShore, updateWater, createSwanSystem, createForest } from './world.js'
 import { createBlanket } from './blanket.js'
 import { createPropSystem } from './props.js'
+import photoGift from './photos/me_and_sia_first_pick.png'
 
 const app = document.querySelector('#app')
 const { scene, camera, renderer, controls } = createScene(app)
@@ -79,6 +80,8 @@ const createExpansionArea = ({ baseBounds, baseHeightAt }) => {
     color: 0x78c982,
     roughness: 0.9,
     metalness: 0,
+    transparent: true,
+    opacity: 0,
   })
   const ground = new THREE.Mesh(geometry, material)
   ground.position.set(centerX, 0, centerZ)
@@ -87,54 +90,279 @@ const createExpansionArea = ({ baseBounds, baseHeightAt }) => {
   const baseMat = new THREE.MeshStandardMaterial({
     color: 0xd8c3a5,
     roughness: 0.85,
+    transparent: true,
+    opacity: 0,
   })
   const roofMat = new THREE.MeshStandardMaterial({
     color: 0xa95445,
     roughness: 0.8,
+    transparent: true,
+    opacity: 0,
   })
-  const baseWidth = 2.2
-  const baseHeight = 1.1
-  const baseDepth = 1.6
+  const baseWidth = 3.0
+  const baseHeight = 1.4
+  const baseDepth = 2.2
   const base = new THREE.Mesh(
     new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth),
     baseMat
   )
   base.position.y = baseHeight / 2
   const roof = new THREE.Mesh(
-    new THREE.ConeGeometry(1.5, 0.9, 4),
+    new THREE.ConeGeometry(2.0, 1.1, 4),
     roofMat
   )
-  roof.position.y = baseHeight + 0.4
+  roof.position.y = baseHeight + 0.55
   roof.rotation.y = Math.PI / 4
   house.add(base, roof)
 
   const doorMat = new THREE.MeshStandardMaterial({
     color: 0x8a5a3b,
     roughness: 0.7,
+    transparent: true,
+    opacity: 0,
   })
   const doorPivot = new THREE.Group()
-  const doorWidth = 0.55
-  const doorHeight = 0.85
+  const doorWidth = 0.7
+  const doorHeight = 1.05
   const doorDepth = 0.06
   const door = new THREE.Mesh(
     new THREE.BoxGeometry(doorWidth, doorHeight, doorDepth),
     doorMat
   )
-  door.position.set(doorWidth / 2, doorHeight / 2 - 0.05, 0)
-  doorPivot.position.set(baseWidth / 2 + 0.01, 0, 0)
+  door.position.set(doorWidth / 2, doorHeight / 2 - 0.05, doorDepth / 2 + 0.02)
+  doorPivot.position.set(baseWidth / 2 + 0.06, 0, 0)
+  doorPivot.rotation.y = Math.PI / 2
+  doorPivot.userData.baseYaw = Math.PI / 2
   doorPivot.add(door)
   house.add(doorPivot)
+
+  const windowMat = new THREE.MeshStandardMaterial({
+    color: 0xf5d88f,
+    emissive: 0xffd37a,
+    emissiveIntensity: 0.6,
+    roughness: 0.4,
+    transparent: true,
+    opacity: 0,
+  })
+  const windowGeom = new THREE.BoxGeometry(0.45, 0.35, 0.04)
+  const windowLeft = new THREE.Mesh(windowGeom, windowMat)
+  const windowRight = new THREE.Mesh(windowGeom, windowMat)
+  const windowZ = baseDepth / 2 + 0.02
+  windowLeft.position.set(-0.75, 0.75, windowZ)
+  windowRight.position.set(0.75, 0.75, windowZ)
+  house.add(windowLeft, windowRight)
+
+  const sideWindowGeom = new THREE.BoxGeometry(0.35, 0.3, 0.04)
+  const sideWindowFront = new THREE.Mesh(sideWindowGeom, windowMat)
+  const sideWindowBack = new THREE.Mesh(sideWindowGeom, windowMat)
+  const sideWindowX = baseWidth / 2 + 0.02
+  sideWindowFront.position.set(sideWindowX, 0.75, -0.45)
+  sideWindowBack.position.set(sideWindowX, 0.75, 0.45)
+  sideWindowFront.rotation.y = Math.PI / 2
+  sideWindowBack.rotation.y = Math.PI / 2
+  house.add(sideWindowFront, sideWindowBack)
+
+  const chimneyMat = new THREE.MeshStandardMaterial({
+    color: 0x7a6e62,
+    roughness: 0.9,
+    transparent: true,
+    opacity: 0,
+  })
+  const chimney = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.5, 0.22),
+    chimneyMat
+  )
+  chimney.position.set(-0.7, baseHeight + 0.9, -0.2)
+  house.add(chimney)
+
+  const dogGroup = new THREE.Group()
+  const dogFur = new THREE.MeshStandardMaterial({
+    color: 0x8a5a3b,
+    roughness: 0.85,
+    transparent: true,
+    opacity: 0,
+  })
+  const dogLight = new THREE.MeshStandardMaterial({
+    color: 0xb87a52,
+    roughness: 0.9,
+    transparent: true,
+    opacity: 0,
+  })
+  const dogBody = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), dogFur)
+  dogBody.scale.set(1.4, 1, 1.1)
+  dogBody.position.set(0, 0.22, 0)
+  const dogHead = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), dogFur)
+  dogHead.position.set(0.28, 0.32, 0.05)
+  const dogSnout = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 10, 8),
+    dogLight
+  )
+  dogSnout.position.set(0.42, 0.3, 0.06)
+  const dogEarLeft = new THREE.Mesh(
+    new THREE.ConeGeometry(0.05, 0.12, 6),
+    dogFur
+  )
+  dogEarLeft.position.set(0.26, 0.47, 0.14)
+  dogEarLeft.rotation.z = Math.PI * 0.25
+  const dogEarRight = dogEarLeft.clone()
+  dogEarRight.position.z = -0.04
+  dogEarRight.rotation.z = -Math.PI * 0.25
+  const dogLegFront = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.05, 0.16, 6),
+    dogFur
+  )
+  dogLegFront.position.set(0.18, 0.08, 0.12)
+  const dogLegFrontB = dogLegFront.clone()
+  dogLegFrontB.position.z = -0.08
+  const dogLegBack = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.045, 0.055, 0.12, 6),
+    dogFur
+  )
+  dogLegBack.position.set(-0.18, 0.07, 0.12)
+  const dogLegBackB = dogLegBack.clone()
+  dogLegBackB.position.z = -0.08
+  const dogTail = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.03, 0.2, 6),
+    dogFur
+  )
+  dogTail.position.set(-0.3, 0.3, 0)
+  dogTail.rotation.z = Math.PI * 0.25
+  dogGroup.add(
+    dogBody,
+    dogHead,
+    dogSnout,
+    dogEarLeft,
+    dogEarRight,
+    dogLegFront,
+    dogLegFrontB,
+    dogLegBack,
+    dogLegBackB,
+    dogTail
+  )
+  dogGroup.scale.set(1, 1, 1)
+
+  const smokeGroup = new THREE.Group()
+  const smokeMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd7d7d7,
+    roughness: 0.9,
+    transparent: true,
+    opacity: 0.0,
+    depthWrite: false,
+  })
+  const smokePuffs = []
+  for (let i = 0; i < 10; i += 1) {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 8, 6),
+      smokeMaterial.clone()
+    )
+    puff.visible = false
+    smokeGroup.add(puff)
+    smokePuffs.push({ mesh: puff, life: 0 })
+  }
+  house.add(smokeGroup)
   const houseY = getHeightAt(clearingCenter.x, clearingCenter.y)
   house.position.set(clearingCenter.x, houseY, clearingCenter.y)
 
+  const rand = (() => {
+    let seed = 481239
+    return () => {
+      seed |= 0
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  })()
+  const randRange = (min, max) => min + (max - min) * rand()
+
+  const flowers = new THREE.Group()
+  const flowerStemMat = new THREE.MeshStandardMaterial({
+    color: 0x4a8b4a,
+    roughness: 0.9,
+    transparent: true,
+    opacity: 0,
+  })
+  const flowerPetalMats = [
+    new THREE.MeshStandardMaterial({
+      color: 0xffb1c8,
+      roughness: 0.7,
+      transparent: true,
+      opacity: 0,
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0xffe08a,
+      roughness: 0.7,
+      transparent: true,
+      opacity: 0,
+    }),
+    new THREE.MeshStandardMaterial({
+      color: 0xc6b3ff,
+      roughness: 0.7,
+      transparent: true,
+      opacity: 0,
+    }),
+  ]
+  const swayItems = []
+  for (let i = 0; i < 12; i += 1) {
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.015, 0.02, 0.24, 6),
+      flowerStemMat
+    )
+    const petal = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 10, 8),
+      flowerPetalMats[i % flowerPetalMats.length]
+    )
+    const flower = new THREE.Group()
+    stem.position.y = 0.12
+    petal.position.y = 0.27
+    flower.add(stem, petal)
+    const angle = randRange(0, Math.PI * 2)
+    const radius = randRange(0.7, 1.6)
+    const fx = clearingCenter.x + Math.cos(angle) * radius
+    const fz = clearingCenter.y + Math.sin(angle) * radius
+    const fy = getHeightAt(fx, fz)
+    flower.position.set(fx, fy, fz)
+    flower.rotation.y = randRange(0, Math.PI * 2)
+    flowers.add(flower)
+    swayItems.push({
+      mesh: flower,
+      phase: randRange(0, Math.PI * 2),
+      base: randRange(-0.05, 0.05),
+    })
+  }
+
   const group = new THREE.Group()
-  group.add(ground, house)
+  group.add(ground, house, flowers, dogGroup)
+  const dogX = clearingCenter.x + baseWidth / 2 + 0.9
+  const dogZ = clearingCenter.y + baseDepth / 2 + 0.6
+  const dogY = getHeightAt(dogX, dogZ)
+  dogGroup.position.set(dogX, dogY + 0.01, dogZ)
+  dogGroup.scale.setScalar(1.15)
+
   return {
     group,
     getHeightAt,
     minX: centerX - width / 2 + 0.6,
     edgeX: rightEdgeX,
     doorPivot,
+    chimney,
+    smokePuffs,
+    dog: dogGroup,
+    dogTail,
+    dogHead,
+    swayItems,
+    revealMaterials: [
+      material,
+      baseMat,
+      roofMat,
+      doorMat,
+      windowMat,
+      chimneyMat,
+      dogFur,
+      dogLight,
+      flowerStemMat,
+      ...flowerPetalMats,
+    ],
   }
 }
 
@@ -145,9 +373,18 @@ const expansionArea = createExpansionArea({
 expansionArea.group.visible = false
 scene.add(expansionArea.group)
 let expansionUnlocked = false
+const expansionReveal = {
+  active: false,
+  t: 0,
+  duration: 2.4,
+}
 const doorState = {
   open: false,
   target: 0,
+}
+const smokeState = {
+  timer: 0,
+  interval: 0.35,
 }
 const getWorldHeightAt = (x, z) =>
   expansionUnlocked && x < expansionArea.edgeX
@@ -456,6 +693,75 @@ const createKissHint = () => {
 
 const kissHint = createKissHint()
 
+const createDoorHint = () => {
+  const hint = document.createElement('div')
+  hint.textContent = 'Press F щоб відкрити/закрити двері'
+  hint.style.position = 'fixed'
+  hint.style.left = '0'
+  hint.style.top = '0'
+  hint.style.transform = 'translate(-50%, -120%)'
+  hint.style.padding = '6px 10px'
+  hint.style.borderRadius = '8px'
+  hint.style.background = 'rgba(16, 18, 24, 0.85)'
+  hint.style.color = '#f7e9ef'
+  hint.style.fontSize = '13px'
+  hint.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+  hint.style.letterSpacing = '0.2px'
+  hint.style.pointerEvents = 'none'
+  hint.style.whiteSpace = 'nowrap'
+  hint.style.display = 'none'
+  hint.style.boxShadow = '0 8px 18px rgba(0,0,0,0.25)'
+  document.body.appendChild(hint)
+  return hint
+}
+
+const doorHint = createDoorHint()
+const createDogHint = () => {
+  const hint = document.createElement('div')
+  hint.textContent = 'Аксель'
+  hint.style.position = 'fixed'
+  hint.style.left = '0'
+  hint.style.top = '0'
+  hint.style.transform = 'translate(-50%, -120%)'
+  hint.style.padding = '6px 10px'
+  hint.style.borderRadius = '8px'
+  hint.style.background = 'rgba(16, 18, 24, 0.85)'
+  hint.style.color = '#f7e9ef'
+  hint.style.fontSize = '13px'
+  hint.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+  hint.style.letterSpacing = '0.2px'
+  hint.style.pointerEvents = 'none'
+  hint.style.whiteSpace = 'nowrap'
+  hint.style.display = 'none'
+  hint.style.boxShadow = '0 8px 18px rgba(0,0,0,0.25)'
+  document.body.appendChild(hint)
+  return hint
+}
+const dogHint = createDogHint()
+
+const createGiftHint = () => {
+  const hint = document.createElement('div')
+  hint.textContent = 'Press P щоб відкрити фото'
+  hint.style.position = 'fixed'
+  hint.style.left = '50%'
+  hint.style.bottom = '90px'
+  hint.style.transform = 'translateX(-50%)'
+  hint.style.padding = '8px 14px'
+  hint.style.borderRadius = '10px'
+  hint.style.background = 'rgba(16, 18, 24, 0.85)'
+  hint.style.color = '#f7e9ef'
+  hint.style.fontSize = '14px'
+  hint.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+  hint.style.letterSpacing = '0.2px'
+  hint.style.pointerEvents = 'none'
+  hint.style.whiteSpace = 'nowrap'
+  hint.style.display = 'none'
+  hint.style.boxShadow = '0 10px 22px rgba(0,0,0,0.28)'
+  document.body.appendChild(hint)
+  return hint
+}
+const giftHint = createGiftHint()
+
 const fireworks = []
 const createFireworkBurst = (origin) => {
   const count = 40
@@ -640,26 +946,6 @@ const edgeQuestions = [
     options: ['Троянди', 'Півонії', 'Лілії'],
     correct: 1,
   },
-  {
-    text: 'Який колір асоціюється з Валентином?',
-    options: ['Синій', 'Червоний', 'Зелений'],
-    correct: 1,
-  },
-  {
-    text: 'Що символізує сердечко?',
-    options: ['Дружбу', 'Кохання', 'Подорожі'],
-    correct: 1,
-  },
-  {
-    text: 'Коли святкують День святого Валентина?',
-    options: ['14 лютого', '8 березня', '1 травня'],
-    correct: 0,
-  },
-  {
-    text: 'Що найчастіше дарують на Валентина?',
-    options: ['Листівку', 'Шкарпетки', 'Парасольку'],
-    correct: 0,
-  },
 ]
 const edgeSignLeft = createEdgeSign(edgeDefaultText)
 const edgeSignRight = createEdgeSign(edgeDefaultText)
@@ -731,6 +1017,28 @@ const propSystem = createPropSystem({
   renderer,
   camera,
 })
+
+const giftBaseHeight = 1.2
+const giftMaterial = new THREE.MeshBasicMaterial({
+  transparent: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+})
+const giftPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), giftMaterial)
+giftPlane.visible = false
+scene.add(giftPlane)
+const updateGiftScale = (texture) => {
+  const image = texture?.image
+  if (!image || !image.width || !image.height) return
+  const aspect = image.width / image.height
+  giftPlane.scale.set(giftBaseHeight * aspect, giftBaseHeight, 1)
+}
+const giftTexture = new THREE.TextureLoader().load(photoGift, (texture) => {
+  updateGiftScale(texture)
+})
+giftTexture.colorSpace = THREE.SRGBColorSpace
+giftMaterial.map = giftTexture
+updateGiftScale(giftTexture)
 
 const swanSystem = createSwanSystem(
   scene,
@@ -807,6 +1115,16 @@ const onKeyDown = (event) => {
   if (key === 'b' || code === 'KeyB') {
     kissRequested = true
   }
+  if (key === 'p' || code === 'KeyP') {
+    const holder = propSystem.getHeartHolder
+      ? propSystem.getHeartHolder()
+      : null
+    if (holder) {
+      giftPlane.visible = !giftPlane.visible
+    } else {
+      giftPlane.visible = false
+    }
+  }
   if (
     (key === 'c' || code === 'KeyC') &&
     edgeSignProximity &&
@@ -860,13 +1178,13 @@ const onKeyDown = (event) => {
     if (doorPivot) {
       const doorPos = new THREE.Vector3()
       doorPivot.getWorldPosition(doorPos)
-      const heroNear = hero.position.distanceTo(doorPos) < 1.2
+      const heroNear = hero.position.distanceTo(doorPos) < 1.4
       const heroTwoNear = heroTwo
-        ? heroTwo.position.distanceTo(doorPos) < 1.2
+        ? heroTwo.position.distanceTo(doorPos) < 1.4
         : false
       if (heroNear || heroTwoNear) {
         doorState.open = !doorState.open
-        doorState.target = doorState.open ? -Math.PI * 0.5 : 0
+        doorState.target = doorState.open ? -Math.PI * 0.55 : 0
       }
     }
   }
@@ -996,6 +1314,24 @@ const animate = () => {
   requestAnimationFrame(animate)
   const delta = clock.getDelta()
   const time = clock.getElapsedTime()
+
+  const heartHolder = propSystem.getHeartHolder
+    ? propSystem.getHeartHolder()
+    : null
+  if (!heartHolder && giftPlane.visible) {
+    giftPlane.visible = false
+  }
+  if (giftHint) {
+    giftHint.style.display = heartHolder ? 'block' : 'none'
+  }
+  if (giftPlane.visible) {
+    giftPlane.position.set(
+      waterCenter.x,
+      water.position.y + 1.8 + Math.sin(time * 1.2) * 0.04,
+      waterCenter.y
+    )
+    giftPlane.lookAt(camera.position)
+  }
 
   if (kissState.cooldown > 0) {
     kissState.cooldown = Math.max(0, kissState.cooldown - delta)
@@ -1220,6 +1556,9 @@ const animate = () => {
         if (!expansionUnlocked) {
           expansionUnlocked = true
           expansionArea.group.visible = true
+          expansionReveal.active = true
+          expansionReveal.t = 0
+          expansionArea.group.scale.set(0.85, 0.85, 0.85)
           bounds.minX = expansionArea.minX
         }
       }
@@ -1250,12 +1589,144 @@ const animate = () => {
 
   if (expansionUnlocked && expansionArea.doorPivot) {
     const doorPivot = expansionArea.doorPivot
+    const baseYaw = doorPivot.userData?.baseYaw ?? 0
     const damp = 1 - Math.exp(-8 * delta)
     doorPivot.rotation.y = THREE.MathUtils.lerp(
       doorPivot.rotation.y,
-      doorState.target,
+      baseYaw + doorState.target,
       damp
     )
+  }
+
+  if (doorHint && expansionUnlocked && expansionArea.doorPivot) {
+    const doorPos = new THREE.Vector3()
+    expansionArea.doorPivot.getWorldPosition(doorPos)
+    const heroNear = hero.position.distanceTo(doorPos) < 1.4
+    const heroTwoNear = heroTwo
+      ? heroTwo.position.distanceTo(doorPos) < 1.4
+      : false
+    if (heroNear || heroTwoNear) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      const screen = doorPos.clone()
+      screen.y += 0.6
+      screen.project(camera)
+      const screenX = (screen.x * 0.5 + 0.5) * rect.width + rect.left
+      const screenY = (-screen.y * 0.5 + 0.5) * rect.height + rect.top
+      doorHint.textContent = doorState.open
+        ? 'Press F щоб закрити двері'
+        : 'Press F щоб відкрити двері'
+      doorHint.style.left = `${screenX}px`
+      doorHint.style.top = `${screenY}px`
+      doorHint.style.display = 'block'
+    } else {
+      doorHint.style.display = 'none'
+    }
+  } else if (doorHint) {
+    doorHint.style.display = 'none'
+  }
+
+  if (dogHint && expansionUnlocked && expansionArea.dog) {
+    const dogPos = new THREE.Vector3()
+    expansionArea.dog.getWorldPosition(dogPos)
+    const heroNear = hero.position.distanceTo(dogPos) < 1.4
+    const heroTwoNear = heroTwo
+      ? heroTwo.position.distanceTo(dogPos) < 1.4
+      : false
+    if (heroNear || heroTwoNear) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      const screen = dogPos.clone()
+      screen.y += 0.35
+      screen.project(camera)
+      const screenX = (screen.x * 0.5 + 0.5) * rect.width + rect.left
+      const screenY = (-screen.y * 0.5 + 0.5) * rect.height + rect.top
+      dogHint.style.left = `${screenX}px`
+      dogHint.style.top = `${screenY}px`
+      dogHint.style.display = 'block'
+    } else {
+      dogHint.style.display = 'none'
+    }
+  } else if (dogHint) {
+    dogHint.style.display = 'none'
+  }
+
+  if (expansionUnlocked && expansionArea.smokePuffs && expansionArea.chimney) {
+    smokeState.timer += delta
+    if (smokeState.timer >= smokeState.interval) {
+      smokeState.timer = 0
+      const next = expansionArea.smokePuffs.find((puff) => puff.life <= 0)
+      if (next) {
+        next.life = 1
+        next.mesh.visible = true
+        next.mesh.material.opacity = 0.25
+        next.mesh.position.set(
+          expansionArea.chimney.position.x,
+          expansionArea.chimney.position.y + 0.3,
+          expansionArea.chimney.position.z
+        )
+        next.mesh.scale.setScalar(0.8 + Math.random() * 0.4)
+      }
+    }
+    for (const puff of expansionArea.smokePuffs) {
+      if (puff.life <= 0) continue
+      puff.life -= delta * 0.45
+      puff.mesh.position.y += delta * 0.2
+      puff.mesh.position.x += Math.sin(time * 1.5 + puff.life * 8) * 0.0015
+      puff.mesh.position.z += Math.cos(time * 1.2 + puff.life * 6) * 0.0015
+      puff.mesh.material.opacity = Math.max(0, puff.life * 0.35)
+      puff.mesh.scale.multiplyScalar(1 + delta * 0.12)
+      if (puff.life <= 0) {
+        puff.mesh.visible = false
+      }
+    }
+  }
+
+  if (expansionUnlocked) {
+    if (expansionArea.dogTail) {
+      expansionArea.dogTail.rotation.y = Math.sin(time * 4) * 0.5
+    }
+    if (expansionArea.dogHead) {
+      expansionArea.dogHead.rotation.x = Math.sin(time * 1.6) * 0.08
+    }
+    if (expansionArea.swayItems) {
+      for (const item of expansionArea.swayItems) {
+        item.mesh.rotation.z =
+          item.base + Math.sin(time * 1.4 + item.phase) * 0.08
+      }
+    }
+  }
+
+  if (expansionReveal.active) {
+    expansionReveal.t = Math.min(
+      expansionReveal.duration,
+      expansionReveal.t + delta
+    )
+    const progress = expansionReveal.t / expansionReveal.duration
+    const eased = smoothstep(0, 1, progress)
+    expansionArea.group.scale.setScalar(0.85 + eased * 0.15)
+    if (expansionArea.revealMaterials) {
+      for (const mat of expansionArea.revealMaterials) {
+        mat.opacity = eased
+      }
+    }
+    if (progress >= 1) {
+      expansionReveal.active = false
+      expansionArea.group.scale.setScalar(1)
+      if (expansionArea.revealMaterials) {
+        for (const mat of expansionArea.revealMaterials) {
+          mat.opacity = 1
+          mat.transparent = false
+        }
+      }
+    }
+  }
+
+  if (expansionUnlocked && !expansionReveal.active && expansionArea.revealMaterials) {
+    for (const mat of expansionArea.revealMaterials) {
+      if (mat.opacity < 1) {
+        mat.opacity = 1
+        mat.transparent = false
+      }
+    }
   }
 
   updateFireworks(delta)

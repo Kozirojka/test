@@ -224,6 +224,8 @@ export const createPropSystem = ({
   }
 
   const heartMesh = createHeartMesh()
+  heartMesh.userData.type = 'heart'
+  heartMesh.userData.giftId = 'me_and_sia_first_pick'
   const redCan = createCanGroup({
     main: '#cf2b2b',
     mid: '#ff3f3f',
@@ -277,6 +279,7 @@ export const createPropSystem = ({
       cooldown: 0,
       held: false,
       isCan: mesh.userData?.type === 'can',
+      isHeart: mesh.userData?.type === 'heart',
       opened: mesh.userData?.opened ?? false,
     }
   }
@@ -742,5 +745,22 @@ export const createPropSystem = ({
     updateActionHint,
     handleKeyDown,
     handleKeyUp,
+    getHeartHolder: () => {
+      const getHeldHeartFor = (playerState) => {
+        if (!playerState) return null
+        if (playerState.heldRightProp?.isHeart) return playerState.heldRightProp
+        if (playerState.heldLeftProp?.isHeart) return playerState.heldLeftProp
+        return null
+      }
+      const p1Heart = getHeldHeartFor(playerOne)
+      if (p1Heart) {
+        return { owner: 'p1', prop: p1Heart }
+      }
+      const p2Heart = getHeldHeartFor(playerTwo)
+      if (p2Heart) {
+        return { owner: 'p2', prop: p2Heart }
+      }
+      return null
+    },
   }
 }
