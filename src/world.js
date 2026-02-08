@@ -6,6 +6,35 @@ const smoothstep = (edge0, edge1, x) => {
   return t * t * (3 - 2 * t)
 }
 
+const roundWaterEnds = (geometry, width, depth) => {
+  const positions = geometry.attributes.position
+  const halfWidth = width / 2
+  const halfDepth = depth / 2
+  const radius = Math.min(halfDepth, halfWidth)
+  const rectHalf = Math.max(0, halfWidth - radius)
+
+  for (let i = 0; i < positions.count; i += 1) {
+    let x = positions.getX(i)
+    let y = positions.getY(i)
+
+    if (Math.abs(x) > rectHalf) {
+      const cx = Math.sign(x || 1) * rectHalf
+      let dx = x - cx
+      let dy = y
+      const dist = Math.hypot(dx, dy)
+      if (dist > radius) {
+        const scale = radius / dist
+        dx *= scale
+        dy *= scale
+        x = cx + dx
+        y = dy
+        positions.setXY(i, x, y)
+      }
+    }
+  }
+  positions.needsUpdate = true
+}
+
 export const createShore = () => {
   const groundWidth = 10
   const groundDepth = 6
@@ -96,6 +125,7 @@ export const createShore = () => {
   const waterDepth = 8
   const waterEdgeInset = 0.02
   const waterGeometry = new THREE.PlaneGeometry(waterWidth, waterDepth, 28, 18)
+  roundWaterEnds(waterGeometry, waterWidth, waterDepth)
   const waterMaterial = new THREE.MeshPhongMaterial({
     color: 0x2a6fb2,
     specular: 0x7fd9ff,
