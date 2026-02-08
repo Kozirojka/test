@@ -34,6 +34,95 @@ const { blanket, updateBlanket, getSurfaceHeightAt } = createBlanket({
 })
 scene.add(blanket)
 
+const smoothstep = (edge0, edge1, x) => {
+  const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+const createExpansionArea = ({ baseBounds, baseHeightAt }) => {
+  const width = 6
+  const depth = 6
+  const seamX = baseBounds.minX - 0.6
+  const centerX = seamX - width / 2
+  const centerZ = (baseBounds.minZ + baseBounds.maxZ) * 0.5
+  const rightEdgeX = seamX
+
+  const clearingCenter = new THREE.Vector2(centerX - 0.6, centerZ + 0.4)
+
+  const getHeightAt = (x, z) => {
+    const localX = x - centerX
+    const localZ = z - centerZ
+    const base =
+      0.12 + Math.sin(localX * 0.55) * Math.cos(localZ * 0.6) * 0.03
+    const dist = Math.hypot(x - clearingCenter.x, z - clearingCenter.y)
+    const clearingT = 1 - smoothstep(0.7, 1.8, dist)
+    let height = THREE.MathUtils.lerp(base, 0.16, clearingT)
+
+    const seamHeight = baseHeightAt(baseBounds.minX, z)
+    const seamBlend = smoothstep(width / 2 - 1.2, width / 2, localX)
+    height = THREE.MathUtils.lerp(height, seamHeight, seamBlend)
+    return height
+  }
+
+  const geometry = new THREE.PlaneGeometry(width, depth, 48, 36)
+  geometry.rotateX(-Math.PI / 2)
+  const positions = geometry.attributes.position
+  for (let i = 0; i < positions.count; i += 1) {
+    const x = positions.getX(i) + centerX
+    const z = positions.getZ(i) + centerZ
+    positions.setY(i, getHeightAt(x, z))
+  }
+  positions.needsUpdate = true
+  geometry.computeVertexNormals()
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x78c982,
+    roughness: 0.9,
+    metalness: 0,
+  })
+  const ground = new THREE.Mesh(geometry, material)
+  ground.position.set(centerX, 0, centerZ)
+
+  const house = new THREE.Group()
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0xd8c3a5,
+    roughness: 0.85,
+  })
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: 0xa95445,
+    roughness: 0.8,
+  })
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 1), baseMat)
+  base.position.y = 0.35
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.55, 4), roofMat)
+  roof.position.y = 0.95
+  roof.rotation.y = Math.PI / 4
+  house.add(base, roof)
+  const houseY = getHeightAt(clearingCenter.x, clearingCenter.y)
+  house.position.set(clearingCenter.x, houseY, clearingCenter.y)
+
+  const group = new THREE.Group()
+  group.add(ground, house)
+  return {
+    group,
+    getHeightAt,
+    minX: centerX - width / 2 + 0.6,
+    edgeX: rightEdgeX,
+  }
+}
+
+const expansionArea = createExpansionArea({
+  baseBounds: bounds,
+  baseHeightAt: getGroundHeightAt,
+})
+expansionArea.group.visible = false
+scene.add(expansionArea.group)
+let expansionUnlocked = false
+const getWorldHeightAt = (x, z) =>
+  expansionUnlocked && x < expansionArea.edgeX
+    ? expansionArea.getHeightAt(x, z)
+    : getGroundHeightAt(x, z)
+
 const createHero = ({
   bodyColor,
   hatColor,
@@ -249,7 +338,7 @@ const createHero = ({
 
 const hero = createHero()
 const heroStartZ = picnicZ + 0.9
-hero.position.set(0, getGroundHeightAt(0, heroStartZ), heroStartZ)
+hero.position.set(0, getWorldHeightAt(0, heroStartZ), heroStartZ)
 scene.add(hero)
 
 const heroTwo = createHero({
@@ -263,7 +352,11 @@ const heroTwo = createHero({
   slimFactor: 0.85,
 })
 const heroTwoStartZ = picnicZ + 0.6
-heroTwo.position.set(0.7, getGroundHeightAt(0.7, heroTwoStartZ), heroTwoStartZ)
+heroTwo.position.set(
+  0.7,
+  getWorldHeightAt(0.7, heroTwoStartZ),
+  heroTwoStartZ
+)
 scene.add(heroTwo)
 
 controls.target.copy(hero.position)
@@ -591,6 +684,11 @@ const heroBounds = new THREE.Box3().setFromObject(hero)
 const heroSize = new THREE.Vector3()
 heroBounds.getSize(heroSize)
 
+const getWorldSurfaceHeightAt = (x, z) =>
+  expansionUnlocked && x < expansionArea.edgeX
+    ? expansionArea.getHeightAt(x, z)
+    : getSurfaceHeightAt(x, z)
+
 const propSystem = createPropSystem({
   scene,
   hero,
@@ -598,7 +696,7 @@ const propSystem = createPropSystem({
   heroSize,
   picnicZ,
   bounds,
-  getSurfaceHeightAt,
+  getSurfaceHeightAt: getWorldSurfaceHeightAt,
   renderer,
   camera,
 })
@@ -793,18 +891,18 @@ const updateHero = (heroTarget, input, delta) => {
     move.normalize().multiplyScalar(heroSpeed * delta)
     heroTarget.position.add(move)
 
-    heroTarget.position.x = THREE.MathUtils.clamp(
-      heroTarget.position.x,
-      bounds.minX,
-      bounds.maxX
-    )
-    heroTarget.position.z = THREE.MathUtils.clamp(
-      heroTarget.position.z,
-      bounds.minZ,
-      bounds.maxZ
-    )
+  heroTarget.position.x = THREE.MathUtils.clamp(
+    heroTarget.position.x,
+    bounds.minX,
+    bounds.maxX
+  )
+  heroTarget.position.z = THREE.MathUtils.clamp(
+    heroTarget.position.z,
+    bounds.minZ,
+    bounds.maxZ
+  )
 
-    heroTarget.position.y = getGroundHeightAt(
+    heroTarget.position.y = getWorldHeightAt(
       heroTarget.position.x,
       heroTarget.position.z
     )
@@ -902,8 +1000,8 @@ const animate = () => {
     }
     hero.position.lerpVectors(kissState.startA, kissState.targetA, blend)
     heroTwo.position.lerpVectors(kissState.startB, kissState.targetB, blend)
-    hero.position.y = getGroundHeightAt(hero.position.x, hero.position.z)
-    heroTwo.position.y = getGroundHeightAt(heroTwo.position.x, heroTwo.position.z)
+    hero.position.y = getWorldHeightAt(hero.position.x, hero.position.z)
+    heroTwo.position.y = getWorldHeightAt(heroTwo.position.x, heroTwo.position.z)
     hero.lookAt(heroTwo.position.x, hero.position.y, heroTwo.position.z)
     heroTwo.lookAt(hero.position.x, heroTwo.position.y, hero.position.z)
     if (hero.userData?.head && heroTwo.userData?.head) {
@@ -1058,11 +1156,11 @@ const animate = () => {
     }
   }
 
-  if (edgeQuiz.active && edgeQuiz.advanceTimer > 0) {
-    edgeQuiz.advanceTimer = Math.max(0, edgeQuiz.advanceTimer - delta)
-    if (edgeQuiz.advanceTimer === 0 && edgeQuiz.result === 'correct') {
-      if (edgeQuiz.current < edgeQuestions.length - 1) {
-        edgeQuiz.current += 1
+    if (edgeQuiz.active && edgeQuiz.advanceTimer > 0) {
+      edgeQuiz.advanceTimer = Math.max(0, edgeQuiz.advanceTimer - delta)
+      if (edgeQuiz.advanceTimer === 0 && edgeQuiz.result === 'correct') {
+        if (edgeQuiz.current < edgeQuestions.length - 1) {
+          edgeQuiz.current += 1
         edgeQuiz.selected = null
         edgeQuiz.result = null
         edgeTyping.active = true
@@ -1073,6 +1171,11 @@ const animate = () => {
         edgeQuiz.active = false
         edgeSignMode = 'completed'
         updateEdgeSignText('Всі відповіді правильні!\nНову локацію відкрито!')
+        if (!expansionUnlocked) {
+          expansionUnlocked = true
+          expansionArea.group.visible = true
+          bounds.minX = expansionArea.minX
+        }
       }
     }
   }
