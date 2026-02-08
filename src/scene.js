@@ -68,13 +68,52 @@ export const createScene = (app) => {
   const sunGlow = new THREE.PointLight(0xffc37a, 0.45, 20, 2)
   sunGlow.position.copy(sunMesh.position)
 
+  const cloudGroup = new THREE.Group()
+  const cloudMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.9,
+    metalness: 0,
+    transparent: true,
+    opacity: 0.95,
+  })
+  const puffGeometry = new THREE.SphereGeometry(0.35, 12, 10)
+  const cloudDefs = [
+    { x: -4.6, y: 3.2, z: -6.2, scale: 1.1 },
+    { x: 1.6, y: 3.0, z: -5.0, scale: 0.95 },
+    { x: 5.2, y: 3.4, z: -6.8, scale: 1.2 },
+    { x: -1.8, y: 2.8, z: -3.0, scale: 0.8 },
+    { x: 3.4, y: 2.7, z: -2.2, scale: 0.75 },
+  ]
+
+  const addCloud = ({ x, y, z, scale }) => {
+    const cloud = new THREE.Group()
+    for (let i = 0; i < 5; i += 1) {
+      const puff = new THREE.Mesh(puffGeometry, cloudMaterial)
+      const angle = (i / 5) * Math.PI * 2
+      const radius = 0.35 + (i % 2) * 0.18
+      puff.position.set(Math.cos(angle) * radius, (i - 2) * 0.05, Math.sin(angle) * radius)
+      const puffScale = scale * (0.7 + (i % 3) * 0.15)
+      puff.scale.setScalar(puffScale)
+      puff.castShadow = false
+      puff.receiveShadow = false
+      cloud.add(puff)
+    }
+    cloud.position.set(x, y, z)
+    cloudGroup.add(cloud)
+  }
+
+  for (const cloudDef of cloudDefs) {
+    addCloud(cloudDef)
+  }
+
   scene.add(
     ambientLight,
     hemisphereLight,
     sunLight,
     sunLight.target,
     sunMesh,
-    sunGlow
+    sunGlow,
+    cloudGroup
   )
 
   return { scene, camera, renderer, controls }

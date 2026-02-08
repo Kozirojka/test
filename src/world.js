@@ -113,6 +113,50 @@ export const createShore = () => {
   water.userData.shoreZ = waterEdgeZ
   water.userData.shoreFade = 1.1
 
+  const backShoreDepth = 3.6
+  const backShoreEdgeZ = water.position.z - waterDepth / 2
+  const backCenterZ = backShoreEdgeZ - backShoreDepth / 2
+  const backShoreBand = 1.4
+  const backLandBase = 0.14
+  const backNoiseAmp = 0.05
+  const backWaterLow = waterLevel + 0.005
+  const getBackHeightAt = (x, z) => {
+    const dist = Math.max(0, backShoreEdgeZ - z)
+    const shoreT = smoothstep(0, backShoreBand, dist)
+    const baseNoise =
+      Math.sin(x * 0.5) * Math.cos(z * 0.35) * 0.6 +
+      Math.sin((x - z) * 0.25) * 0.4
+    const noise = baseNoise * backNoiseAmp * shoreT
+    const height = backWaterLow + (backLandBase + noise) * shoreT
+    return Math.max(backWaterLow, height)
+  }
+
+  const backWidth = groundWidth + 1.4
+  const backGeometry = new THREE.PlaneGeometry(
+    backWidth,
+    backShoreDepth,
+    64,
+    28
+  )
+  backGeometry.rotateX(-Math.PI / 2)
+  const backPositions = backGeometry.attributes.position
+  for (let i = 0; i < backPositions.count; i += 1) {
+    const x = backPositions.getX(i)
+    const z = backPositions.getZ(i) + backCenterZ
+    backPositions.setY(i, getBackHeightAt(x, z))
+  }
+  backPositions.needsUpdate = true
+  backGeometry.computeVertexNormals()
+
+  const backMaterial = new THREE.MeshStandardMaterial({
+    color: 0x7fcd78,
+    roughness: 0.9,
+    metalness: 0,
+  })
+  const backShore = new THREE.Mesh(backGeometry, backMaterial)
+  backShore.position.z = backCenterZ
+  backShore.receiveShadow = true
+
   const waterWireMaterial = new THREE.MeshBasicMaterial({
     color: 0x9ad8ff,
     wireframe: true,
@@ -139,6 +183,15 @@ export const createShore = () => {
     waterDepth,
     getGroundHeightAt,
   })
+  const backForest = createBackForest({
+    bounds: {
+      minX: -backWidth / 2 + 0.4,
+      maxX: backWidth / 2 - 0.4,
+      minZ: backCenterZ - backShoreDepth / 2 + 0.3,
+      maxZ: backShoreEdgeZ - 0.25,
+    },
+    getHeightAt: getBackHeightAt,
+  })
   const roadStones = createRoadStones({
     bounds,
     shoreZ,
@@ -151,7 +204,16 @@ export const createShore = () => {
   })
 
   const group = new THREE.Group()
-  group.add(water, waterWire, ground, reeds, roadStones, roadTwigs)
+  group.add(
+    water,
+    waterWire,
+    ground,
+    backShore,
+    backForest,
+    reeds,
+    roadStones,
+    roadTwigs
+  )
   return {
     group,
     ground,
@@ -559,6 +621,161 @@ export const createForest = ({
   }
 
   return { group, heartSpawns }
+}
+
+const createBackForest = ({ bounds, getHeightAt }) => {
+  const group = new THREE.Group()
+  const treeCount = 12
+  const birchCount = 9
+  const bushCount = 16
+
+  const rand = (() => {
+    let seed = 674321
+    return () => {
+      seed |= 0
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  })()
+  const randRange = (min, max) => min + (max - min) * rand()
+
+  const trunkGeometry = new THREE.CylinderGeometry(0.07, 0.1, 0.7, 8)
+  const trunkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x6a4a2f,
+    roughness: 0.9,
+  })
+  const leafGeometry = new THREE.ConeGeometry(0.35, 0.9, 8)
+  const leafMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2f6b3f,
+    roughness: 0.9,
+  })
+
+  const birchTrunkGeometry = new THREE.CylinderGeometry(0.05, 0.06, 0.8, 8)
+  const birchTrunkMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe6e1d6,
+    roughness: 0.85,
+  })
+  const birchLeafGeometry = new THREE.SphereGeometry(0.28, 10, 8)
+  const birchLeafMaterial = new THREE.MeshStandardMaterial({
+    color: 0x7fcf7b,
+    roughness: 0.85,
+  })
+
+  const trunkMesh = new THREE.InstancedMesh(
+    trunkGeometry,
+    trunkMaterial,
+    treeCount
+  )
+  const leafMesh = new THREE.InstancedMesh(leafGeometry, leafMaterial, treeCount)
+  trunkMesh.castShadow = true
+  trunkMesh.receiveShadow = true
+  leafMesh.castShadow = true
+  leafMesh.receiveShadow = true
+
+  const birchTrunks = new THREE.InstancedMesh(
+    birchTrunkGeometry,
+    birchTrunkMaterial,
+    birchCount
+  )
+  const birchLeaves = new THREE.InstancedMesh(
+    birchLeafGeometry,
+    birchLeafMaterial,
+    birchCount
+  )
+  birchTrunks.castShadow = true
+  birchTrunks.receiveShadow = true
+  birchLeaves.castShadow = true
+  birchLeaves.receiveShadow = true
+
+  const dummy = new THREE.Object3D()
+
+  let placed = 0
+  let attempts = 0
+  while (placed < treeCount && attempts < treeCount * 12) {
+    attempts += 1
+    const x = randRange(bounds.minX, bounds.maxX)
+    const z = randRange(bounds.minZ, bounds.maxZ)
+    const y = getHeightAt(x, z)
+    const scale = randRange(0.9, 1.3)
+
+    dummy.position.set(x, y + 0.35 * scale, z)
+    dummy.scale.set(scale, scale, scale)
+    dummy.rotation.y = randRange(0, Math.PI * 2)
+    dummy.updateMatrix()
+    trunkMesh.setMatrixAt(placed, dummy.matrix)
+
+    dummy.position.set(x, y + 0.95 * scale, z)
+    dummy.scale.set(scale * 1.1, scale * 1.1, scale * 1.1)
+    dummy.rotation.y = randRange(0, Math.PI * 2)
+    dummy.updateMatrix()
+    leafMesh.setMatrixAt(placed, dummy.matrix)
+    placed += 1
+  }
+
+  placed = 0
+  attempts = 0
+  while (placed < birchCount && attempts < birchCount * 14) {
+    attempts += 1
+    const x = randRange(bounds.minX, bounds.maxX)
+    const z = randRange(bounds.minZ, bounds.maxZ)
+    const y = getHeightAt(x, z)
+    const scale = randRange(0.85, 1.2)
+
+    dummy.position.set(x, y + 0.4 * scale, z)
+    dummy.scale.set(scale, scale, scale)
+    dummy.rotation.y = randRange(0, Math.PI * 2)
+    dummy.updateMatrix()
+    birchTrunks.setMatrixAt(placed, dummy.matrix)
+
+    dummy.position.set(x, y + 0.95 * scale, z)
+    dummy.scale.set(scale * 1.05, scale * 1.05, scale * 1.05)
+    dummy.rotation.y = randRange(0, Math.PI * 2)
+    dummy.updateMatrix()
+    birchLeaves.setMatrixAt(placed, dummy.matrix)
+    placed += 1
+  }
+
+  trunkMesh.instanceMatrix.needsUpdate = true
+  leafMesh.instanceMatrix.needsUpdate = true
+  birchTrunks.instanceMatrix.needsUpdate = true
+  birchLeaves.instanceMatrix.needsUpdate = true
+  group.add(trunkMesh, leafMesh, birchTrunks, birchLeaves)
+
+  const bushGeometry = new THREE.TetrahedronGeometry(0.2, 2)
+  const bushMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3f8449,
+    roughness: 0.95,
+  })
+  const bushMesh = new THREE.InstancedMesh(
+    bushGeometry,
+    bushMaterial,
+    bushCount
+  )
+  bushMesh.castShadow = true
+  bushMesh.receiveShadow = true
+
+  placed = 0
+  attempts = 0
+  while (placed < bushCount && attempts < bushCount * 12) {
+    attempts += 1
+    const x = randRange(bounds.minX, bounds.maxX)
+    const z = randRange(bounds.minZ, bounds.maxZ)
+    const y = getHeightAt(x, z)
+    const scale = randRange(0.7, 1.25)
+    dummy.position.set(x, y + 0.12 * scale, z)
+    dummy.scale.set(scale, scale, scale)
+    dummy.rotation.y = randRange(0, Math.PI * 2)
+    dummy.updateMatrix()
+    bushMesh.setMatrixAt(placed, dummy.matrix)
+    placed += 1
+  }
+
+  bushMesh.instanceMatrix.needsUpdate = true
+  group.add(bushMesh)
+
+  return group
 }
 
 const createReeds = ({ bounds, shoreZ, water, waterDepth, getGroundHeightAt }) => {
