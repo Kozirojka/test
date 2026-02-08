@@ -219,6 +219,7 @@ export const createPropSystem = ({
   picnicZ,
   bounds,
   heartSpawns,
+  heartAlbums,
   getSurfaceHeightAt,
   renderer,
   camera,
@@ -232,10 +233,10 @@ export const createPropSystem = ({
     object.position.y += surfaceY - box.min.y
   }
 
-  const createGiftHeart = (giftId) => {
+  const createGiftHeart = (albumId) => {
     const mesh = createHeartMesh()
     mesh.userData.type = 'heart'
-    mesh.userData.giftId = giftId
+    mesh.userData.albumId = albumId
     mesh.userData.pickupLabel = 'Підняти сердечко'
     mesh.userData.pickupLabelP1 = 'Підняти сердечко (L)'
     mesh.userData.pickupLabelP2 = 'Підняти сердечко (E/R)'
@@ -243,7 +244,11 @@ export const createPropSystem = ({
   }
 
   const heartMeshes = []
-  const baseHeart = createGiftHeart('me_and_sia_first_pick')
+  const albumList =
+    Array.isArray(heartAlbums) && heartAlbums.length
+      ? heartAlbums
+      : [{ id: 'album_default' }]
+  const baseHeart = createGiftHeart(albumList[0].id)
   heartMeshes.push(baseHeart)
   const redCan = createCanGroup({
     main: '#cf2b2b',
@@ -277,12 +282,13 @@ export const createPropSystem = ({
   grayCan.userData.pickupLabelP2 = 'Підняти банку сірого рева (E/R)'
 
   placeOnSurface(baseHeart, -0.6, picnicZ + 0.05, propGroundEpsilon + 0.04)
-  const bushGiftIds = ['me_and_sia_second_photo', 'me_and_sia_third_photo']
-  if (heartSpawns?.length) {
-    for (let i = 0; i < heartSpawns.length; i += 1) {
+  if (heartSpawns?.length && albumList.length > 1) {
+    const extraAlbums = albumList.slice(1)
+    const count = Math.min(extraAlbums.length, heartSpawns.length)
+    for (let i = 0; i < count; i += 1) {
       const spawn = heartSpawns[i]
-      const giftId = bushGiftIds[i % bushGiftIds.length]
-      const heart = createGiftHeart(giftId)
+      const album = extraAlbums[i]
+      const heart = createGiftHeart(album.id)
       scaleToHeight(heart, targetPropHeight)
       placeOnSurface(heart, spawn.x, spawn.z, propGroundEpsilon + 0.12)
       scene.add(heart)

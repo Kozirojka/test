@@ -1139,6 +1139,29 @@ const getWorldSurfaceHeightAt = (x, z) =>
     ? expansionArea.getHeightAt(x, z)
     : getSurfaceHeightAt(x, z)
 
+const heartAlbums = [
+  {
+    id: 'album_main',
+    photos: [
+      {
+        id: 'me_and_sia_first_pick',
+        src: photoGiftFirst,
+        caption: 'В іванофранківську',
+      },
+      {
+        id: 'me_and_sia_second_photo',
+        src: photoGiftSecond,
+        caption: 'В Києві',
+      },
+      {
+        id: 'me_and_sia_third_photo',
+        src: photoGiftThird,
+        caption: 'В тебе дома  в миколаєві',
+      },
+    ],
+  },
+]
+
 const propSystem = createPropSystem({
   scene,
   hero,
@@ -1147,6 +1170,7 @@ const propSystem = createPropSystem({
   picnicZ,
   bounds,
   heartSpawns,
+  heartAlbums,
   getSurfaceHeightAt: getWorldSurfaceHeightAt,
   renderer,
   camera,
@@ -1172,15 +1196,16 @@ const updateGiftScale = (texture) => {
   const aspect = image.width / image.height
   giftPlane.scale.set(giftBaseHeight * aspect, giftBaseHeight, 1)
 }
-const giftSources = {
-  me_and_sia_first_pick: photoGiftFirst,
-  me_and_sia_second_photo: photoGiftSecond,
-  me_and_sia_third_photo: photoGiftThird,
-}
-const giftCaptions = {
-  me_and_sia_first_pick: 'В іванофранківську',
-  me_and_sia_second_photo: 'В Києві',
-  me_and_sia_third_photo: 'В тебе дома  в миколаєві',
+const giftSources = {}
+const giftCaptions = {}
+const albumPhotoIds = {}
+for (const album of heartAlbums) {
+  albumPhotoIds[album.id] = []
+  for (const photo of album.photos) {
+    giftSources[photo.id] = photo.src
+    giftCaptions[photo.id] = photo.caption
+    albumPhotoIds[album.id].push(photo.id)
+  }
 }
 const giftTextures = {}
 const giftLoader = new THREE.TextureLoader()
@@ -1198,9 +1223,13 @@ for (const [giftId, src] of Object.entries(giftSources)) {
   loadGiftTexture(giftId, src)
 }
 let activeGiftId = null
+let activeAlbumId = heartAlbums[0]?.id ?? null
 const setGiftTexture = (giftId) => {
-  const fallback = 'me_and_sia_first_pick'
-  const chosenId = giftTextures[giftId] ? giftId : fallback
+  const albumFallback =
+    activeAlbumId && albumPhotoIds[activeAlbumId]?.length
+      ? albumPhotoIds[activeAlbumId][0]
+      : Object.keys(giftSources)[0]
+  const chosenId = giftTextures[giftId] ? giftId : albumFallback
   const texture = giftTextures[chosenId]
   if (giftMaterial.map !== texture) {
     giftMaterial.map = texture
@@ -1209,7 +1238,11 @@ const setGiftTexture = (giftId) => {
   }
   activeGiftId = chosenId
 }
-setGiftTexture('me_and_sia_first_pick')
+if (activeAlbumId && albumPhotoIds[activeAlbumId]?.length) {
+  setGiftTexture(albumPhotoIds[activeAlbumId][0])
+} else {
+  setGiftTexture(Object.keys(giftSources)[0])
+}
 
 const getUniqueGiftIds = (entries) => {
   const result = []
@@ -1360,25 +1393,26 @@ const onKeyDown = (event) => {
       : []
     if (heldHearts.length === 0) {
       giftPlane.visible = false
-    } else if (heldHearts.length === 1) {
-      const giftId = heldHearts[0].prop?.mesh?.userData?.giftId
+    } else {
+      const heldAlbums = getUniqueGiftIds(
+        heldHearts.map((entry) => entry.prop?.mesh?.userData?.albumId)
+      )
+      if (heldAlbums.length > 0 && !heldAlbums.includes(activeAlbumId)) {
+        activeAlbumId = heldAlbums[0]
+      }
+      const albumIds = activeAlbumId ? albumPhotoIds[activeAlbumId] ?? [] : []
       if (!giftPlane.visible) {
-        setGiftTexture(giftId)
-        giftPlane.visible = true
+        const giftId =
+          activeGiftId && albumIds.includes(activeGiftId)
+            ? activeGiftId
+            : albumIds[0]
+        if (giftId) {
+          setGiftTexture(giftId)
+          giftPlane.visible = true
+        }
       } else {
         giftPlane.visible = false
       }
-    } else {
-      const giftIds = heldHearts.map(
-        (entry) => entry.prop?.mesh?.userData?.giftId
-      )
-      const currentIndex = giftIds.findIndex((id) => id === activeGiftId)
-      const nextIndex =
-        currentIndex === -1
-          ? 0
-          : (currentIndex + 1) % giftIds.length
-      setGiftTexture(giftIds[nextIndex])
-      giftPlane.visible = true
     }
   }
   if (
@@ -1670,16 +1704,23 @@ const animate = () => {
   const heldHearts = propSystem.getHeldHearts
     ? propSystem.getHeldHearts()
     : []
-  const heldGiftIds = getUniqueGiftIds(
-    heldHearts.map((entry) => entry.prop?.mesh?.userData?.giftId)
+  const heldAlbums = getUniqueGiftIds(
+    heldHearts.map((entry) => entry.prop?.mesh?.userData?.albumId)
   )
+  if (heldAlbums.length > 0 && !heldAlbums.includes(activeAlbumId)) {
+    activeAlbumId = heldAlbums[0]
+  }
+  const heldGiftIds =
+    heldHearts.length > 0 && activeAlbumId
+      ? albumPhotoIds[activeAlbumId] ?? []
+      : []
   if (heldHearts.length === 0 && giftPlane.visible) {
     giftPlane.visible = false
     activeGiftId = null
   }
   if (giftHint) {
     giftHint.textContent =
-      heldHearts.length > 1
+      heldGiftIds.length > 1
         ? 'Press P щоб переглянути фото'
         : 'Press P щоб відкрити фото'
     giftHint.style.display = heldHearts.length > 0 ? 'block' : 'none'
