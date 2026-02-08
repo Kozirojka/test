@@ -62,7 +62,7 @@ export const createShore = () => {
   groundGeometry.rotateX(-Math.PI / 2)
   const groundPositions = groundGeometry.attributes.position
   const groundColors = new Float32Array(groundPositions.count * 3)
-  const grassColor = new THREE.Color(0x6bb86a)
+  const grassColor = new THREE.Color(0x8fd68a)
   const dirtColor = new THREE.Color(0xbda58a)
   const mixedColor = new THREE.Color()
   for (let i = 0; i < groundPositions.count; i += 1) {
@@ -83,7 +83,7 @@ export const createShore = () => {
   groundGeometry.computeVertexNormals()
 
   const groundMaterial = new THREE.MeshStandardMaterial({
-    color: 0x3b7d3f,
+    color: 0x77c070,
     roughness: 0.95,
     metalness: 0,
     vertexColors: true,
