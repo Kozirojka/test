@@ -1091,8 +1091,9 @@ const propSystem = createPropSystem({
 
 const giftBaseHeight = 1.2
 const giftMaterial = new THREE.MeshBasicMaterial({
-  transparent: true,
-  depthWrite: false,
+  transparent: false,
+  depthWrite: true,
+  opacity: 1,
   side: THREE.DoubleSide,
 })
 const giftPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), giftMaterial)

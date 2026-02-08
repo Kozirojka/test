@@ -348,6 +348,8 @@ export const createPropSystem = ({
       baseLeftRot,
       heldRightProp: null,
       heldLeftProp: null,
+      heldRightHearts: [],
+      heldLeftHearts: [],
       activeProp: null,
     }
   }
@@ -427,10 +429,11 @@ export const createPropSystem = ({
   const propFriction = 0.85
   const propBounce = 0.2
   const propAngularDamp = 0.92
+  const propRepel = 0.35
   const dropRightDir = new THREE.Vector3()
   const dropForwardDir = new THREE.Vector3()
   const dropWorldPos = new THREE.Vector3()
-  const softDropArc = 0.05
+  const softDropArc = 0.08
   const armExtend = {
     z: 0.08,
     xRot: -0.18,
@@ -558,6 +561,39 @@ export const createPropSystem = ({
       prop.mesh.rotation.y += prop.angular.y * delta
       prop.mesh.rotation.z += prop.angular.z * delta
     }
+
+    // Simple prop-to-prop collision (horizontal separation)
+    for (let i = 0; i < props.length; i += 1) {
+      const a = props[i]
+      if (a.held || a.softDrop) continue
+      for (let j = i + 1; j < props.length; j += 1) {
+        const b = props[j]
+        if (b.held || b.softDrop) continue
+        const dx = b.mesh.position.x - a.mesh.position.x
+        const dz = b.mesh.position.z - a.mesh.position.z
+        const dist = Math.hypot(dx, dz)
+        const minDist = a.radius + b.radius
+        if (dist > 0 && dist < minDist) {
+          const nx = dx / dist
+          const nz = dz / dist
+          const overlap = minDist - dist
+          const push = overlap * 0.5
+          a.mesh.position.x -= nx * push
+          a.mesh.position.z -= nz * push
+          b.mesh.position.x += nx * push
+          b.mesh.position.z += nz * push
+          a.velocity.x -= nx * propRepel
+          a.velocity.z -= nz * propRepel
+          b.velocity.x += nx * propRepel
+          b.velocity.z += nz * propRepel
+        } else if (dist === 0) {
+          const angle = Math.random() * Math.PI * 2
+          a.mesh.position.x += Math.cos(angle) * 0.01
+          a.mesh.position.z += Math.sin(angle) * 0.01
+        }
+      }
+    }
+
     updateOpenEffects(delta)
     updateArmPose(playerOne)
     if (playerTwo) {
@@ -584,7 +620,10 @@ export const createPropSystem = ({
 
   const updateHintForPlayer = (playerState, hint, projector, labelKey) => {
     if (!playerState || !hint) return
-    if (playerState.heldLeftProp && playerState.heldRightProp) {
+    const bothBlocked =
+      hasNonHeart(playerState.heldLeftProp) &&
+      hasNonHeart(playerState.heldRightProp)
+    if (bothBlocked) {
       hint.style.display = 'none'
       playerState.activeProp = null
       return
@@ -635,7 +674,41 @@ export const createPropSystem = ({
       hasClosedCan(playerOne) || hasClosedCan(playerTwo) ? 'block' : 'none'
   }
 
+  const hasNonHeart = (prop) => prop && !prop.isHeart
+  const getHeartStack = (playerState, hand) =>
+    hand === 'right' ? playerState.heldRightHearts : playerState.heldLeftHearts
+  const updateHeartStackPositions = (playerState, hand) => {
+    const stack = getHeartStack(playerState, hand)
+    for (let i = 0; i < stack.length; i += 1) {
+      const heart = stack[i]
+      heart.mesh.position.set(0, 0.02 + i * 0.07, 0.04 - i * 0.01)
+      heart.mesh.rotation.set(Math.PI / 2, 0, 0)
+    }
+  }
+
   const attachToHand = (prop, playerState, hand) => {
+    if (prop.isHeart) {
+      const stack = getHeartStack(playerState, hand)
+      const occupied =
+        hand === 'right' ? playerState.heldRightProp : playerState.heldLeftProp
+      if (hasNonHeart(occupied)) {
+        return false
+      }
+      prop.held = true
+      prop.velocity.set(0, 0, 0)
+      prop.angular.set(0, 0, 0)
+      prop.mesh.position.set(0, 0, 0)
+      stack.push(prop)
+      if (hand === 'right') {
+        playerState.holdRight.add(prop.mesh)
+        playerState.heldRightProp = stack[0]
+      } else {
+        playerState.holdLeft.add(prop.mesh)
+        playerState.heldLeftProp = stack[0]
+      }
+      updateHeartStackPositions(playerState, hand)
+      return true
+    }
     prop.held = true
     prop.velocity.set(0, 0, 0)
     prop.angular.set(0, 0, 0)
@@ -652,6 +725,7 @@ export const createPropSystem = ({
       playerState.holdLeft.add(prop.mesh)
       playerState.heldLeftProp = prop
     }
+    return true
   }
 
   const openCan = (prop) => {
@@ -672,7 +746,7 @@ export const createPropSystem = ({
     createOpenEffect(mouth)
   }
 
-  const dropFromHand = (prop, playerState, hand) => {
+  const dropFromHand = (prop, playerState, hand, options = {}) => {
     if (!prop) return
     const player = playerState.player
     dropRightDir.set(1, 0, 0).applyQuaternion(player.quaternion)
@@ -680,25 +754,39 @@ export const createPropSystem = ({
     const side = hand === 'right' ? 0.25 : -0.25
     const dropX = player.position.x + dropForwardDir.x * 0.6 + dropRightDir.x * side
     const dropZ = player.position.z + dropForwardDir.z * 0.6 + dropRightDir.z * side
-    prop.mesh.getWorldPosition(dropWorldPos)
-    if (hand === 'right') {
-      playerState.holdRight.remove(prop.mesh)
-      playerState.heldRightProp = null
+    if (options.startPos) {
+      dropWorldPos.copy(options.startPos)
     } else {
-      playerState.holdLeft.remove(prop.mesh)
-      playerState.heldLeftProp = null
+      prop.mesh.getWorldPosition(dropWorldPos)
+    }
+    const startPos = dropWorldPos
+    if (!options.skipHand) {
+      if (hand === 'right') {
+        playerState.holdRight.remove(prop.mesh)
+        playerState.heldRightProp = null
+      } else {
+        playerState.holdLeft.remove(prop.mesh)
+        playerState.heldLeftProp = null
+      }
     }
 
     scene.add(prop.mesh)
-    prop.mesh.position.copy(dropWorldPos)
+    prop.mesh.position.copy(startPos)
+    let endX = dropX
+    let endZ = dropZ
+    const distXZ = Math.hypot(endX - startPos.x, endZ - startPos.z)
+    if (distXZ < 0.2) {
+      endX += dropForwardDir.x * 0.25
+      endZ += dropForwardDir.z * 0.25
+    }
     const floorY =
-      getSurfaceHeightAt(dropX, dropZ) + prop.halfHeight + propGroundEpsilon
+      getSurfaceHeightAt(endX, endZ) + prop.halfHeight + propGroundEpsilon
     if (prop.isHeart || prop.isCan) {
       prop.softDrop = {
         time: 0,
-        duration: 0.35,
-        start: dropWorldPos.clone(),
-        end: new THREE.Vector3(dropX, floorY, dropZ),
+        duration: 0.55,
+        start: startPos.clone(),
+        end: new THREE.Vector3(endX, floorY, endZ),
       }
       prop.velocity.set(0, 0, 0)
       prop.angular.set(0, 0, 0)
@@ -715,13 +803,40 @@ export const createPropSystem = ({
     prop.cooldown = 0.5
   }
 
+  const dropHeartFromHand = (playerState, hand) => {
+    const stack = getHeartStack(playerState, hand)
+    if (!stack.length) return false
+    const heart = stack.pop()
+    const startPos = heart.mesh.getWorldPosition(new THREE.Vector3())
+    if (hand === 'right') {
+      playerState.holdRight.remove(heart.mesh)
+    } else {
+      playerState.holdLeft.remove(heart.mesh)
+    }
+    if (stack.length === 0) {
+      if (hand === 'right') {
+        playerState.heldRightProp = null
+      } else {
+        playerState.heldLeftProp = null
+      }
+    } else {
+      updateHeartStackPositions(playerState, hand)
+    }
+    dropFromHand(heart, playerState, hand, { skipHand: true, startPos })
+    return true
+  }
+
   const handleKeyDown = (event) => {
     const key = event.key.toLowerCase()
     const code = event.code
     if ((key === 'l' || code === 'KeyL') && playerOne.activeProp) {
-      if (!playerOne.heldRightProp) {
-        attachToHand(playerOne.activeProp, playerOne, 'right')
-      } else if (!playerOne.heldLeftProp) {
+      const rightBlocked = hasNonHeart(playerOne.heldRightProp)
+      const leftBlocked = hasNonHeart(playerOne.heldLeftProp)
+      if (!rightBlocked) {
+        if (!attachToHand(playerOne.activeProp, playerOne, 'right') && !leftBlocked) {
+          attachToHand(playerOne.activeProp, playerOne, 'left')
+        }
+      } else if (!leftBlocked) {
         attachToHand(playerOne.activeProp, playerOne, 'left')
       } else {
         return
@@ -730,6 +845,8 @@ export const createPropSystem = ({
       actionHint.style.display = 'none'
     }
     if (key === 'k' || code === 'KeyK') {
+      if (dropHeartFromHand(playerOne, 'right')) return
+      if (dropHeartFromHand(playerOne, 'left')) return
       if (playerOne.heldRightProp) {
         dropFromHand(playerOne.heldRightProp, playerOne, 'right')
       } else if (playerOne.heldLeftProp) {
@@ -748,9 +865,13 @@ export const createPropSystem = ({
     if (playerTwo) {
       if (key === 'e' || code === 'KeyE') {
         if (playerTwo.activeProp) {
-          if (!playerTwo.heldRightProp) {
-            attachToHand(playerTwo.activeProp, playerTwo, 'right')
-          } else if (!playerTwo.heldLeftProp) {
+          const rightBlocked = hasNonHeart(playerTwo.heldRightProp)
+          const leftBlocked = hasNonHeart(playerTwo.heldLeftProp)
+          if (!rightBlocked) {
+            if (!attachToHand(playerTwo.activeProp, playerTwo, 'right') && !leftBlocked) {
+              attachToHand(playerTwo.activeProp, playerTwo, 'left')
+            }
+          } else if (!leftBlocked) {
             attachToHand(playerTwo.activeProp, playerTwo, 'left')
           } else {
             return
@@ -760,14 +881,19 @@ export const createPropSystem = ({
             actionHintTwo.style.display = 'none'
           }
         } else if (playerTwo.heldRightProp) {
+          if (dropHeartFromHand(playerTwo, 'right')) return
           dropFromHand(playerTwo.heldRightProp, playerTwo, 'right')
         }
       }
       if (key === 'r' || code === 'KeyR') {
         if (playerTwo.activeProp) {
-          if (!playerTwo.heldLeftProp) {
-            attachToHand(playerTwo.activeProp, playerTwo, 'left')
-          } else if (!playerTwo.heldRightProp) {
+          const rightBlocked = hasNonHeart(playerTwo.heldRightProp)
+          const leftBlocked = hasNonHeart(playerTwo.heldLeftProp)
+          if (!leftBlocked) {
+            if (!attachToHand(playerTwo.activeProp, playerTwo, 'left') && !rightBlocked) {
+              attachToHand(playerTwo.activeProp, playerTwo, 'right')
+            }
+          } else if (!rightBlocked) {
             attachToHand(playerTwo.activeProp, playerTwo, 'right')
           } else {
             return
@@ -777,6 +903,7 @@ export const createPropSystem = ({
             actionHintTwo.style.display = 'none'
           }
         } else if (playerTwo.heldLeftProp) {
+          if (dropHeartFromHand(playerTwo, 'left')) return
           dropFromHand(playerTwo.heldLeftProp, playerTwo, 'left')
         }
       }
@@ -802,19 +929,11 @@ export const createPropSystem = ({
       const hearts = []
       const collect = (playerState, owner) => {
         if (!playerState) return
-        if (playerState.heldRightProp?.isHeart) {
-          hearts.push({
-            owner,
-            hand: 'right',
-            prop: playerState.heldRightProp,
-          })
+        for (const heart of playerState.heldRightHearts ?? []) {
+          hearts.push({ owner, hand: 'right', prop: heart })
         }
-        if (playerState.heldLeftProp?.isHeart) {
-          hearts.push({
-            owner,
-            hand: 'left',
-            prop: playerState.heldLeftProp,
-          })
+        for (const heart of playerState.heldLeftHearts ?? []) {
+          hearts.push({ owner, hand: 'left', prop: heart })
         }
       }
       collect(playerOne, 'p1')
