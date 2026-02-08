@@ -92,12 +92,38 @@ const createExpansionArea = ({ baseBounds, baseHeightAt }) => {
     color: 0xa95445,
     roughness: 0.8,
   })
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 1), baseMat)
-  base.position.y = 0.35
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.55, 4), roofMat)
-  roof.position.y = 0.95
+  const baseWidth = 2.2
+  const baseHeight = 1.1
+  const baseDepth = 1.6
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth),
+    baseMat
+  )
+  base.position.y = baseHeight / 2
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(1.5, 0.9, 4),
+    roofMat
+  )
+  roof.position.y = baseHeight + 0.4
   roof.rotation.y = Math.PI / 4
   house.add(base, roof)
+
+  const doorMat = new THREE.MeshStandardMaterial({
+    color: 0x8a5a3b,
+    roughness: 0.7,
+  })
+  const doorPivot = new THREE.Group()
+  const doorWidth = 0.55
+  const doorHeight = 0.85
+  const doorDepth = 0.06
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(doorWidth, doorHeight, doorDepth),
+    doorMat
+  )
+  door.position.set(doorWidth / 2, doorHeight / 2 - 0.05, 0)
+  doorPivot.position.set(baseWidth / 2 + 0.01, 0, 0)
+  doorPivot.add(door)
+  house.add(doorPivot)
   const houseY = getHeightAt(clearingCenter.x, clearingCenter.y)
   house.position.set(clearingCenter.x, houseY, clearingCenter.y)
 
@@ -108,6 +134,7 @@ const createExpansionArea = ({ baseBounds, baseHeightAt }) => {
     getHeightAt,
     minX: centerX - width / 2 + 0.6,
     edgeX: rightEdgeX,
+    doorPivot,
   }
 }
 
@@ -118,6 +145,10 @@ const expansionArea = createExpansionArea({
 expansionArea.group.visible = false
 scene.add(expansionArea.group)
 let expansionUnlocked = false
+const doorState = {
+  open: false,
+  target: 0,
+}
 const getWorldHeightAt = (x, z) =>
   expansionUnlocked && x < expansionArea.edgeX
     ? expansionArea.getHeightAt(x, z)
@@ -824,6 +855,21 @@ const onKeyDown = (event) => {
       }
     }
   }
+  if (expansionUnlocked && (key === 'f' || code === 'KeyF')) {
+    const doorPivot = expansionArea.doorPivot
+    if (doorPivot) {
+      const doorPos = new THREE.Vector3()
+      doorPivot.getWorldPosition(doorPos)
+      const heroNear = hero.position.distanceTo(doorPos) < 1.2
+      const heroTwoNear = heroTwo
+        ? heroTwo.position.distanceTo(doorPos) < 1.2
+        : false
+      if (heroNear || heroTwoNear) {
+        doorState.open = !doorState.open
+        doorState.target = doorState.open ? -Math.PI * 0.5 : 0
+      }
+    }
+  }
   propSystem.handleKeyDown(event)
 }
 const onKeyUp = (event) => {
@@ -1200,6 +1246,16 @@ const animate = () => {
         edgeSignLeft.rotation.copy(baseRot)
       }
     }
+  }
+
+  if (expansionUnlocked && expansionArea.doorPivot) {
+    const doorPivot = expansionArea.doorPivot
+    const damp = 1 - Math.exp(-8 * delta)
+    doorPivot.rotation.y = THREE.MathUtils.lerp(
+      doorPivot.rotation.y,
+      doorState.target,
+      damp
+    )
   }
 
   updateFireworks(delta)
