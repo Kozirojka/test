@@ -90,6 +90,7 @@ export const createShore = () => {
   })
   const ground = new THREE.Mesh(groundGeometry, groundMaterial)
   ground.position.z = groundCenterZ
+  ground.receiveShadow = true
 
   const waterWidth = 14
   const waterDepth = 8
@@ -106,6 +107,7 @@ export const createShore = () => {
   const water = new THREE.Mesh(waterGeometry, waterMaterial)
   water.rotation.x = -Math.PI / 2
   water.position.set(0, waterLevel, shoreZ - waterDepth / 2 - waterEdgeInset)
+  water.receiveShadow = true
   const waterCenter = new THREE.Vector2(water.position.x, water.position.z)
   const waterEdgeZ = water.position.z + waterDepth / 2
   water.userData.shoreZ = waterEdgeZ
@@ -419,6 +421,10 @@ export const createForest = ({
     treeCount
   )
   const leafMesh = new THREE.InstancedMesh(leafGeometry, leafMaterial, treeCount)
+  trunkMesh.castShadow = true
+  trunkMesh.receiveShadow = true
+  leafMesh.castShadow = true
+  leafMesh.receiveShadow = true
 
   const dummy = new THREE.Object3D()
   const picnicCenter = new THREE.Vector2(0, picnicZ)
@@ -482,6 +488,8 @@ export const createForest = ({
     bushMaterial,
     bushCount
   )
+  bushMesh.castShadow = true
+  bushMesh.receiveShadow = true
   const bushPositions = []
 
   placed = 0
@@ -644,6 +652,8 @@ const createRoadStones = ({ bounds, shoreZ, getTerrainSample }) => {
     roughness: 0.95,
   })
   const stones = new THREE.InstancedMesh(stoneGeometry, stoneMaterial, stoneCount)
+  stones.castShadow = true
+  stones.receiveShadow = true
   const dummy = new THREE.Object3D()
 
   let placed = 0
@@ -703,6 +713,10 @@ const createRoadTwigs = ({ bounds, shoreZ, getTerrainSample }) => {
   const twigCountB = twigCount - twigCountA
   const twigsA = new THREE.InstancedMesh(twigGeometryA, twigMaterial, twigCountA)
   const twigsB = new THREE.InstancedMesh(twigGeometryB, twigMaterial, twigCountB)
+  twigsA.castShadow = true
+  twigsA.receiveShadow = true
+  twigsB.castShadow = true
+  twigsB.receiveShadow = true
   const dummy = new THREE.Object3D()
 
   let placed = 0

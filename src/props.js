@@ -27,6 +27,8 @@ const createHeartMesh = () => {
   const mesh = new THREE.Mesh(geometry, material)
   mesh.scale.set(0.7, 0.7, 0.7)
   mesh.rotation.set(-Math.PI / 2, Math.PI * 0.15, -Math.PI * 0.05)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
   return mesh
 }
 
@@ -147,6 +149,12 @@ const createCanGroup = (variant) => {
   group.userData.tab = tab
   group.userData.lid = lid
   group.userData.labelYaw = Math.PI / 2
+  group.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true
+      child.receiveShadow = true
+    }
+  })
   return group
 }
 

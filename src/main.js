@@ -42,6 +42,16 @@ const smoothstep = (edge0, edge1, x) => {
   return t * t * (3 - 2 * t)
 }
 
+const applyShadowSettings = (object, { cast = true, receive = true } = {}) => {
+  if (!object) return
+  object.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = cast
+      child.receiveShadow = receive
+    }
+  })
+}
+
 const createExpansionArea = ({ baseBounds, baseHeightAt }) => {
   const width = 6
   const depth = 6
@@ -374,6 +384,13 @@ const expansionArea = createExpansionArea({
 })
 expansionArea.group.visible = false
 scene.add(expansionArea.group)
+applyShadowSettings(expansionArea.group, { cast: true, receive: true })
+if (expansionArea.smokePuffs) {
+  for (const puff of expansionArea.smokePuffs) {
+    puff.mesh.castShadow = false
+    puff.mesh.receiveShadow = false
+  }
+}
 let expansionUnlocked = false
 const expansionReveal = {
   active: false,
@@ -610,6 +627,7 @@ const hero = createHero()
 const heroStartZ = picnicZ + 0.9
 hero.position.set(0, getWorldHeightAt(0, heroStartZ), heroStartZ)
 scene.add(hero)
+applyShadowSettings(hero, { cast: true, receive: true })
 
 const heroTwo = createHero({
   style: 'female',
@@ -628,6 +646,7 @@ heroTwo.position.set(
   heroTwoStartZ
 )
 scene.add(heroTwo)
+applyShadowSettings(heroTwo, { cast: true, receive: true })
 
 controls.target.copy(hero.position)
 

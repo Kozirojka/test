@@ -21,6 +21,8 @@ export const createScene = (app) => {
   const renderer = new THREE.WebGLRenderer({ antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(window.innerWidth, window.innerHeight)
+  renderer.shadowMap.enabled = true
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap
   app.appendChild(renderer.domElement)
 
   const controls = new OrbitControls(camera, renderer.domElement)
@@ -47,6 +49,16 @@ export const createScene = (app) => {
   const sunLight = new THREE.DirectionalLight(0xffb06a, 1.15)
   sunLight.position.set(4, 2.2, -3.5)
   sunLight.target.position.set(0, 0, 0)
+  sunLight.castShadow = true
+  sunLight.shadow.mapSize.set(1024, 1024)
+  sunLight.shadow.bias = -0.0006
+  sunLight.shadow.normalBias = 0.04
+  sunLight.shadow.camera.left = -12
+  sunLight.shadow.camera.right = 12
+  sunLight.shadow.camera.top = 12
+  sunLight.shadow.camera.bottom = -12
+  sunLight.shadow.camera.near = 0.5
+  sunLight.shadow.camera.far = 20
 
   const sunGeometry = new THREE.SphereGeometry(0.55, 24, 18)
   const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffc36f })

@@ -133,6 +133,7 @@ export const createBlanket = ({ picnicZ, getGroundHeightAt, fixedPosition }) => 
   const blanket = new THREE.Mesh(blanketGeometry, blanketMaterial)
   blanket.rotation.x = -Math.PI / 2
   blanket.rotation.z = Math.PI * 0.08
+  blanket.receiveShadow = true
 
   const placeOnGround = (object, x, z, lift = 0) => {
     object.position.set(x, 0, z)
