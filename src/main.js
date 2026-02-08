@@ -4,7 +4,9 @@ import { createScene } from './scene.js'
 import { createShore, updateWater, createSwanSystem, createForest } from './world.js'
 import { createBlanket } from './blanket.js'
 import { createPropSystem } from './props.js'
-import photoGift from './photos/me_and_sia_first_pick.png'
+import photoGiftFirst from './photos/me_and_sia_first_pick.png'
+import photoGiftSecond from './photos/me_and_sia_second_photo.png'
+import photoGiftThird from './photos/me_and_sia_third_photo.png'
 
 const app = document.querySelector('#app')
 const { scene, camera, renderer, controls } = createScene(app)
@@ -997,6 +999,19 @@ if (edgeSignLeft && edgeSignRight) {
   edgeSignRight.userData.baseRot = edgeSignRight.rotation.clone()
 }
 
+const edgeSignZones = [{ x: edgeSignX, z: edgeSignZ, radius: 1.2 }]
+
+const { group: forest, heartSpawns } = createForest({
+  bounds,
+  shoreZ,
+  picnicZ,
+  getGroundHeightAt,
+  getRoadMaskAt,
+  blanketPosition: { x: 1.2, y: 0.2346605718, z: -0.3 },
+  noSpawnZones: edgeSignZones,
+})
+scene.add(forest)
+
 const heroBounds = new THREE.Box3().setFromObject(hero)
 const heroSize = new THREE.Vector3()
 heroBounds.getSize(heroSize)
@@ -1013,6 +1028,7 @@ const propSystem = createPropSystem({
   heroSize,
   picnicZ,
   bounds,
+  heartSpawns,
   getSurfaceHeightAt: getWorldSurfaceHeightAt,
   renderer,
   camera,
@@ -1033,12 +1049,39 @@ const updateGiftScale = (texture) => {
   const aspect = image.width / image.height
   giftPlane.scale.set(giftBaseHeight * aspect, giftBaseHeight, 1)
 }
-const giftTexture = new THREE.TextureLoader().load(photoGift, (texture) => {
-  updateGiftScale(texture)
-})
-giftTexture.colorSpace = THREE.SRGBColorSpace
-giftMaterial.map = giftTexture
-updateGiftScale(giftTexture)
+const giftSources = {
+  me_and_sia_first_pick: photoGiftFirst,
+  me_and_sia_second_photo: photoGiftSecond,
+  me_and_sia_third_photo: photoGiftThird,
+}
+const giftTextures = {}
+const giftLoader = new THREE.TextureLoader()
+const loadGiftTexture = (giftId, src) => {
+  const texture = giftLoader.load(src, () => {
+    if (giftMaterial.map === texture) {
+      updateGiftScale(texture)
+    }
+  })
+  texture.colorSpace = THREE.SRGBColorSpace
+  giftTextures[giftId] = texture
+  return texture
+}
+for (const [giftId, src] of Object.entries(giftSources)) {
+  loadGiftTexture(giftId, src)
+}
+let activeGiftId = null
+const setGiftTexture = (giftId) => {
+  const fallback = 'me_and_sia_first_pick'
+  const chosenId = giftTextures[giftId] ? giftId : fallback
+  const texture = giftTextures[chosenId]
+  if (giftMaterial.map !== texture) {
+    giftMaterial.map = texture
+    giftMaterial.needsUpdate = true
+    updateGiftScale(texture)
+  }
+  activeGiftId = chosenId
+}
+setGiftTexture('me_and_sia_first_pick')
 
 const swanSystem = createSwanSystem(
   scene,
@@ -1047,19 +1090,6 @@ const swanSystem = createSwanSystem(
   waterWidth,
   waterDepth
 )
-
-const edgeSignZones = [{ x: edgeSignX, z: edgeSignZ, radius: 1.2 }]
-
-const forest = createForest({
-  bounds,
-  shoreZ,
-  picnicZ,
-  getGroundHeightAt,
-  getRoadMaskAt,
-  blanketPosition: { x: 1.2, y: 0.2346605718, z: -0.3 },
-  noSpawnZones: edgeSignZones,
-})
-scene.add(forest)
 
 const keys = new Set()
 let kissRequested = false
@@ -1116,13 +1146,30 @@ const onKeyDown = (event) => {
     kissRequested = true
   }
   if (key === 'p' || code === 'KeyP') {
-    const holder = propSystem.getHeartHolder
-      ? propSystem.getHeartHolder()
-      : null
-    if (holder) {
-      giftPlane.visible = !giftPlane.visible
-    } else {
+    const heldHearts = propSystem.getHeldHearts
+      ? propSystem.getHeldHearts()
+      : []
+    if (heldHearts.length === 0) {
       giftPlane.visible = false
+    } else if (heldHearts.length === 1) {
+      const giftId = heldHearts[0].prop?.mesh?.userData?.giftId
+      if (!giftPlane.visible) {
+        setGiftTexture(giftId)
+        giftPlane.visible = true
+      } else {
+        giftPlane.visible = false
+      }
+    } else {
+      const giftIds = heldHearts.map(
+        (entry) => entry.prop?.mesh?.userData?.giftId
+      )
+      const currentIndex = giftIds.findIndex((id) => id === activeGiftId)
+      const nextIndex =
+        currentIndex === -1
+          ? 0
+          : (currentIndex + 1) % giftIds.length
+      setGiftTexture(giftIds[nextIndex])
+      giftPlane.visible = true
     }
   }
   if (
@@ -1315,16 +1362,29 @@ const animate = () => {
   const delta = clock.getDelta()
   const time = clock.getElapsedTime()
 
-  const heartHolder = propSystem.getHeartHolder
-    ? propSystem.getHeartHolder()
-    : null
-  if (!heartHolder && giftPlane.visible) {
+  const heldHearts = propSystem.getHeldHearts
+    ? propSystem.getHeldHearts()
+    : []
+  if (heldHearts.length === 0 && giftPlane.visible) {
     giftPlane.visible = false
+    activeGiftId = null
   }
   if (giftHint) {
-    giftHint.style.display = heartHolder ? 'block' : 'none'
+    giftHint.textContent =
+      heldHearts.length > 1
+        ? 'Press P щоб переглянути фото'
+        : 'Press P щоб відкрити фото'
+    giftHint.style.display = heldHearts.length > 0 ? 'block' : 'none'
   }
   if (giftPlane.visible) {
+    const heldGiftIds = heldHearts.map(
+      (entry) => entry.prop?.mesh?.userData?.giftId
+    )
+    if (heldGiftIds.length > 0) {
+      if (!heldGiftIds.includes(activeGiftId)) {
+        setGiftTexture(heldGiftIds[0])
+      }
+    }
     giftPlane.position.set(
       waterCenter.x,
       water.position.y + 1.8 + Math.sin(time * 1.2) * 0.04,

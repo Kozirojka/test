@@ -458,7 +458,7 @@ export const createForest = ({
   leafMesh.instanceMatrix.needsUpdate = true
   group.add(trunkMesh, leafMesh)
 
-  const bushGeometry = new THREE.IcosahedronGeometry(0.22, 1)
+  const bushGeometry = new THREE.TetrahedronGeometry(0.22, 2)
   const bushMaterial = new THREE.MeshStandardMaterial({
     color: 0x377b41,
     roughness: 0.95,
@@ -468,6 +468,7 @@ export const createForest = ({
     bushMaterial,
     bushCount
   )
+  const bushPositions = []
 
   placed = 0
   attempts = 0
@@ -498,6 +499,7 @@ export const createForest = ({
     dummy.rotation.y = randRange(0, Math.PI * 2)
     dummy.updateMatrix()
     bushMesh.setMatrixAt(placed, dummy.matrix)
+    bushPositions.push({ x, y, z, scale })
 
     placed += 1
   }
@@ -505,7 +507,36 @@ export const createForest = ({
   bushMesh.instanceMatrix.needsUpdate = true
   group.add(bushMesh)
 
-  return group
+  const heartSpawns = []
+  const candidates = []
+  for (const pos of bushPositions) {
+    const dist = picnicCenter.distanceTo(new THREE.Vector2(pos.x, pos.z))
+    if (dist > 1.2 && dist < 3.2) {
+      candidates.push({ pos, dist })
+    }
+  }
+  candidates.sort((a, b) => a.dist - b.dist)
+  let chosen = candidates.slice(0, 2).map((item) => item.pos)
+  if (chosen.length < 2) {
+    const fallback = bushPositions
+      .map((pos) => ({ pos, sort: rand() }))
+      .sort((a, b) => a.sort - b.sort)
+      .map((entry) => entry.pos)
+      .filter((pos) => !chosen.includes(pos))
+    chosen = chosen.concat(fallback.slice(0, 2 - chosen.length))
+  }
+
+  for (const pos of chosen) {
+    const angle = randRange(0, Math.PI * 2)
+    const radius = randRange(0.12, 0.22) * pos.scale
+    heartSpawns.push({
+      x: pos.x + Math.cos(angle) * radius,
+      y: pos.y + 0.3 * pos.scale,
+      z: pos.z + Math.sin(angle) * radius,
+    })
+  }
+
+  return { group, heartSpawns }
 }
 
 const createReeds = ({ bounds, shoreZ, water, waterDepth, getGroundHeightAt }) => {

@@ -210,6 +210,7 @@ export const createPropSystem = ({
   heroSize,
   picnicZ,
   bounds,
+  heartSpawns,
   getSurfaceHeightAt,
   renderer,
   camera,
@@ -223,9 +224,19 @@ export const createPropSystem = ({
     object.position.y += surfaceY - box.min.y
   }
 
-  const heartMesh = createHeartMesh()
-  heartMesh.userData.type = 'heart'
-  heartMesh.userData.giftId = 'me_and_sia_first_pick'
+  const createGiftHeart = (giftId) => {
+    const mesh = createHeartMesh()
+    mesh.userData.type = 'heart'
+    mesh.userData.giftId = giftId
+    mesh.userData.pickupLabel = 'Підняти сердечко'
+    mesh.userData.pickupLabelP1 = 'Підняти сердечко (L)'
+    mesh.userData.pickupLabelP2 = 'Підняти сердечко (E/R)'
+    return mesh
+  }
+
+  const heartMeshes = []
+  const baseHeart = createGiftHeart('me_and_sia_first_pick')
+  heartMeshes.push(baseHeart)
   const redCan = createCanGroup({
     main: '#cf2b2b',
     mid: '#ff3f3f',
@@ -246,7 +257,7 @@ export const createPropSystem = ({
   })
   const targetPropHeight = heroSize.y / 5
 
-  scaleToHeight(heartMesh, targetPropHeight)
+  scaleToHeight(baseHeart, targetPropHeight)
   scaleToHeight(redCan, targetPropHeight)
   scaleToHeight(grayCan, targetPropHeight)
 
@@ -256,14 +267,23 @@ export const createPropSystem = ({
   grayCan.userData.pickupLabel = 'Підняти банку сірого рева'
   grayCan.userData.pickupLabelP1 = 'Підняти банку сірого рева (L)'
   grayCan.userData.pickupLabelP2 = 'Підняти банку сірого рева (E/R)'
-  heartMesh.userData.pickupLabel = 'Підняти сердечко'
-  heartMesh.userData.pickupLabelP1 = 'Підняти сердечко (L)'
-  heartMesh.userData.pickupLabelP2 = 'Підняти сердечко (E/R)'
 
-  placeOnSurface(heartMesh, -0.6, picnicZ + 0.05, propGroundEpsilon)
+  placeOnSurface(baseHeart, -0.6, picnicZ + 0.05, propGroundEpsilon + 0.04)
+  const bushGiftIds = ['me_and_sia_second_photo', 'me_and_sia_third_photo']
+  if (heartSpawns?.length) {
+    for (let i = 0; i < heartSpawns.length; i += 1) {
+      const spawn = heartSpawns[i]
+      const giftId = bushGiftIds[i % bushGiftIds.length]
+      const heart = createGiftHeart(giftId)
+      scaleToHeight(heart, targetPropHeight)
+      placeOnSurface(heart, spawn.x, spawn.z, propGroundEpsilon + 0.12)
+      scene.add(heart)
+      heartMeshes.push(heart)
+    }
+  }
   placeOnSurface(redCan, 0.5, picnicZ - 0.15, propGroundEpsilon)
   placeOnSurface(grayCan, 0.15, picnicZ - 0.35, propGroundEpsilon)
-  scene.add(heartMesh, redCan, grayCan)
+  scene.add(baseHeart, redCan, grayCan)
 
   const heroRadius = 0.5 * Math.max(heroSize.x, heroSize.z)
   const createPropBody = (mesh) => {
@@ -285,7 +305,7 @@ export const createPropSystem = ({
   }
 
   const props = [
-    createPropBody(heartMesh),
+    ...heartMeshes.map((heart) => createPropBody(heart)),
     createPropBody(redCan),
     createPropBody(grayCan),
   ]
@@ -409,6 +429,8 @@ export const createPropSystem = ({
   const propAngularDamp = 0.92
   const dropRightDir = new THREE.Vector3()
   const dropForwardDir = new THREE.Vector3()
+  const dropWorldPos = new THREE.Vector3()
+  const softDropArc = 0.05
   const armExtend = {
     z: 0.08,
     xRot: -0.18,
@@ -474,6 +496,23 @@ export const createPropSystem = ({
   const updateProps = (delta) => {
     for (const prop of props) {
       if (prop.held) continue
+      if (prop.softDrop) {
+        prop.softDrop.time += delta
+        const t = Math.min(prop.softDrop.time / prop.softDrop.duration, 1)
+        const eased = t * t * (3 - 2 * t)
+        prop.mesh.position.lerpVectors(
+          prop.softDrop.start,
+          prop.softDrop.end,
+          eased
+        )
+        prop.mesh.position.y += Math.sin(t * Math.PI) * softDropArc
+        if (t >= 1) {
+          prop.softDrop = null
+          prop.velocity.set(0, 0, 0)
+          prop.angular.set(0, 0, 0)
+        }
+        continue
+      }
       if (prop.cooldown > 0) {
         prop.cooldown = Math.max(0, prop.cooldown - delta)
       }
@@ -641,7 +680,7 @@ export const createPropSystem = ({
     const side = hand === 'right' ? 0.25 : -0.25
     const dropX = player.position.x + dropForwardDir.x * 0.6 + dropRightDir.x * side
     const dropZ = player.position.z + dropForwardDir.z * 0.6 + dropRightDir.z * side
-
+    prop.mesh.getWorldPosition(dropWorldPos)
     if (hand === 'right') {
       playerState.holdRight.remove(prop.mesh)
       playerState.heldRightProp = null
@@ -651,13 +690,27 @@ export const createPropSystem = ({
     }
 
     scene.add(prop.mesh)
-    placeOnSurface(prop.mesh, dropX, dropZ, propGroundEpsilon)
-    prop.velocity.set(dropForwardDir.x * 0.2, 0.2, dropForwardDir.z * 0.2)
-    prop.angular.set(
-      (Math.random() - 0.5) * 1.2,
-      (Math.random() - 0.5) * 1.2,
-      (Math.random() - 0.5) * 1.2
-    )
+    prop.mesh.position.copy(dropWorldPos)
+    const floorY =
+      getSurfaceHeightAt(dropX, dropZ) + prop.halfHeight + propGroundEpsilon
+    if (prop.isHeart || prop.isCan) {
+      prop.softDrop = {
+        time: 0,
+        duration: 0.35,
+        start: dropWorldPos.clone(),
+        end: new THREE.Vector3(dropX, floorY, dropZ),
+      }
+      prop.velocity.set(0, 0, 0)
+      prop.angular.set(0, 0, 0)
+    } else {
+      placeOnSurface(prop.mesh, dropX, dropZ, propGroundEpsilon)
+      prop.velocity.set(dropForwardDir.x * 0.2, 0.2, dropForwardDir.z * 0.2)
+      prop.angular.set(
+        (Math.random() - 0.5) * 1.2,
+        (Math.random() - 0.5) * 1.2,
+        (Math.random() - 0.5) * 1.2
+      )
+    }
     prop.held = false
     prop.cooldown = 0.5
   }
@@ -745,6 +798,29 @@ export const createPropSystem = ({
     updateActionHint,
     handleKeyDown,
     handleKeyUp,
+    getHeldHearts: () => {
+      const hearts = []
+      const collect = (playerState, owner) => {
+        if (!playerState) return
+        if (playerState.heldRightProp?.isHeart) {
+          hearts.push({
+            owner,
+            hand: 'right',
+            prop: playerState.heldRightProp,
+          })
+        }
+        if (playerState.heldLeftProp?.isHeart) {
+          hearts.push({
+            owner,
+            hand: 'left',
+            prop: playerState.heldLeftProp,
+          })
+        }
+      }
+      collect(playerOne, 'p1')
+      collect(playerTwo, 'p2')
+      return hearts
+    },
     getHeartHolder: () => {
       const getHeldHeartFor = (playerState) => {
         if (!playerState) return null
