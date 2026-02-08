@@ -12,8 +12,9 @@ export const createShore = () => {
   const groundCenterZ = 1.2
   const shoreZ = groundCenterZ - groundDepth / 2
 
-  const shoreBand = 1.6
-  const shoreLow = 0.01
+  const waterLevel = -0.22
+  const shoreBand = 2.8
+  const shoreLow = waterLevel + 0.005
   const landBase = 0.08
   const noiseAmp = 0.045
 
@@ -33,7 +34,8 @@ export const createShore = () => {
 
     const dist = Math.hypot(x - plateauCenter.x, z - plateauCenter.y)
     const plateauT = 1 - smoothstep(plateauInner, plateauOuter, dist)
-    const noise = baseNoise * noiseAmp * (1 - plateauT * 0.5)
+    let noise = baseNoise * noiseAmp * (1 - plateauT * 0.5)
+    noise *= smoothstep(0.25, 1, shoreT)
 
     let height = shoreLow + (landBase + noise) * shoreT
     height += plateauHeight * plateauT
@@ -45,7 +47,7 @@ export const createShore = () => {
       (1 - smoothstep(roadHalf, roadHalf + roadBlend, roadDistance)) * shoreT
     height = lerp(height, height - 0.03, roadMask)
 
-    return { height: Math.max(0.01, height), roadMask }
+    return { height: Math.max(shoreLow, height), roadMask }
   }
 
   const getGroundHeightAt = (x, z) => getTerrainSample(x, z).height
@@ -91,6 +93,7 @@ export const createShore = () => {
 
   const waterWidth = 14
   const waterDepth = 8
+  const waterEdgeInset = 0.02
   const waterGeometry = new THREE.PlaneGeometry(waterWidth, waterDepth, 28, 18)
   const waterMaterial = new THREE.MeshPhongMaterial({
     color: 0x2a6fb2,
@@ -102,8 +105,11 @@ export const createShore = () => {
   })
   const water = new THREE.Mesh(waterGeometry, waterMaterial)
   water.rotation.x = -Math.PI / 2
-  water.position.set(0, -0.22, shoreZ - waterDepth / 2 + 0.8)
+  water.position.set(0, waterLevel, shoreZ - waterDepth / 2 - waterEdgeInset)
   const waterCenter = new THREE.Vector2(water.position.x, water.position.z)
+  const waterEdgeZ = water.position.z + waterDepth / 2
+  water.userData.shoreZ = waterEdgeZ
+  water.userData.shoreFade = 1.1
 
   const waterWireMaterial = new THREE.MeshBasicMaterial({
     color: 0x9ad8ff,
@@ -165,10 +171,18 @@ export const waterWaveAt = (localX, localY, time) =>
 
 export const updateWater = (water, time) => {
   const waterPositions = water.geometry.attributes.position
+  const shoreZ = water.userData?.shoreZ
+  const shoreFade = water.userData?.shoreFade ?? 0
   for (let i = 0; i < waterPositions.count; i += 1) {
     const x = waterPositions.getX(i)
     const y = waterPositions.getY(i)
-    const wave = waterWaveAt(x, y, time)
+    let wave = waterWaveAt(x, y, time)
+    if (shoreZ !== undefined && shoreFade > 0) {
+      const worldZ = water.position.z + y
+      const distToShore = Math.max(0, shoreZ - worldZ)
+      const fade = smoothstep(0, shoreFade, distToShore)
+      wave *= fade
+    }
     waterPositions.setZ(i, wave)
   }
   waterPositions.needsUpdate = true
