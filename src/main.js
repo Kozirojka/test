@@ -859,6 +859,28 @@ const createGiftPagination = () => {
 }
 const giftPagination = createGiftPagination()
 const giftPaginationState = { ids: [] }
+const createGiftCaption = () => {
+  const caption = document.createElement('div')
+  caption.style.position = 'fixed'
+  caption.style.left = '0'
+  caption.style.top = '0'
+  caption.style.transform = 'translate(-50%, 0)'
+  caption.style.display = 'none'
+  caption.style.padding = '6px 12px'
+  caption.style.borderRadius = '10px'
+  caption.style.background = 'rgba(16, 18, 24, 0.75)'
+  caption.style.color = '#f7e9ef'
+  caption.style.fontSize = '13px'
+  caption.style.fontFamily = 'system-ui, -apple-system, Segoe UI, sans-serif'
+  caption.style.letterSpacing = '0.2px'
+  caption.style.pointerEvents = 'none'
+  caption.style.whiteSpace = 'nowrap'
+  caption.style.boxShadow = '0 8px 18px rgba(0,0,0,0.25)'
+  caption.style.zIndex = '10'
+  document.body.appendChild(caption)
+  return caption
+}
+const giftCaption = createGiftCaption()
 
 const fireworks = []
 const createFireworkBurst = (origin) => {
@@ -1142,6 +1164,8 @@ giftPlane.visible = false
 scene.add(giftPlane)
 const giftPaginationAnchor = new THREE.Vector3()
 const giftPaginationScreen = new THREE.Vector3()
+const giftCaptionAnchor = new THREE.Vector3()
+const giftCaptionScreen = new THREE.Vector3()
 const updateGiftScale = (texture) => {
   const image = texture?.image
   if (!image || !image.width || !image.height) return
@@ -1152,6 +1176,11 @@ const giftSources = {
   me_and_sia_first_pick: photoGiftFirst,
   me_and_sia_second_photo: photoGiftSecond,
   me_and_sia_third_photo: photoGiftThird,
+}
+const giftCaptions = {
+  me_and_sia_first_pick: 'В іванофранківську',
+  me_and_sia_second_photo: 'В Києві',
+  me_and_sia_third_photo: 'В тебе дома  в миколаєві',
 }
 const giftTextures = {}
 const giftLoader = new THREE.TextureLoader()
@@ -1685,6 +1714,24 @@ const animate = () => {
     giftPagination.style.display = 'flex'
   } else {
     giftPagination.style.display = 'none'
+  }
+
+  if (giftPlane.visible && activeGiftId && giftCaptions[activeGiftId]) {
+    const rect = renderer.domElement.getBoundingClientRect()
+    const offsetY = heldGiftIds.length > 1 ? -0.82 : -0.74
+    giftCaptionAnchor.set(0, offsetY, 0)
+    giftPlane.localToWorld(giftCaptionAnchor)
+    giftCaptionScreen.copy(giftCaptionAnchor).project(camera)
+    const screenX =
+      (giftCaptionScreen.x * 0.5 + 0.5) * rect.width + rect.left
+    const screenY =
+      (-giftCaptionScreen.y * 0.5 + 0.5) * rect.height + rect.top
+    giftCaption.textContent = giftCaptions[activeGiftId]
+    giftCaption.style.left = `${screenX}px`
+    giftCaption.style.top = `${screenY}px`
+    giftCaption.style.display = 'block'
+  } else {
+    giftCaption.style.display = 'none'
   }
 
   if (kissState.cooldown > 0) {
